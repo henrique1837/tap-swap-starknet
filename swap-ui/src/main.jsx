@@ -18,8 +18,8 @@ import App from './App.jsx';
 import './index.css';
 
 // Starknet React Imports
-import { StarknetConfig, voyager, argent, braavos, useInjectedConnectors, jsonRpcProvider, injected } from '@starknet-react/core';
-import { mainnet, sepolia } from '@starknet-react/chains';
+import { StarknetConfig, voyager, argent, braavos, useInjectedConnectors, jsonRpcProvider } from '@starknet-react/core';
+import { sepolia } from '@starknet-react/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const queryClient = new QueryClient(); // Initialize QueryClient
@@ -32,7 +32,7 @@ const queryClient = new QueryClient(); // Initialize QueryClient
 const myProvider = jsonRpcProvider({
   rpc: (chain) => {
     if (chain.id === sepolia.id) {
-      return { nodeUrl: 'https://free-rpc.nethermind.io/sepolia-juno/' };
+      return { nodeUrl: 'https://starknet-sepolia.drpc.org' };
     }
     const rpcs = chain.rpcUrls.public.http;
     const nodeUrl = rpcs[Math.floor(Math.random() * rpcs.length)];
@@ -44,9 +44,8 @@ const myProvider = jsonRpcProvider({
 function Root() {
   const { connectors } = useInjectedConnectors({
     recommended: [
-      argent(),
       braavos(),
-      injected({ id: "xverse" }),
+      argent(),
     ],
     includeRecommended: "always",
     order: "random"
@@ -54,7 +53,7 @@ function Root() {
 
   return (
     <StarknetConfig
-      chains={[sepolia, mainnet]}
+      chains={[sepolia]}
       provider={myProvider}
       connectors={connectors}
       explorer={voyager}

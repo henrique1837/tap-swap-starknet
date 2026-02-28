@@ -309,7 +309,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
 
     // Fetch all Taproot Assets
     const fetchAssets = useCallback(async () => {
-        if (!isConnected || !isTapdAvailable()) {
+        if (!isConnected) {
             setAssets([]);
             return;
         }
@@ -318,26 +318,30 @@ export const useTaprootAssets = (lncClient, isConnected) => {
         setError(null);
 
         try {
-            // List all assets in the wallet
-            const response = await lncClient.tapd.taprootAssets.listAssets({
-                withWitness: false,
-                includeLeased: true,
-                scriptKeyType: {
-                    allTypes: true,
-                },
-            });
-
-            const assetList = response.assets || [];
-
             // Also fetch channel assets to cross-reference
             const channelAssetsList = await fetchChannelAssets();
+            const channelAssetById = new Map(channelAssetsList.map((asset) => [normalizeHex(asset.assetId), asset]));
+
+            let assetList = [];
+            if (isTapdAvailable()) {
+                // List all wallet assets (on-chain + known script key types).
+                const response = await lncClient.tapd.taprootAssets.listAssets({
+                    withWitness: false,
+                    includeLeased: true,
+                    scriptKeyType: {
+                        allTypes: true,
+                    },
+                });
+                assetList = response.assets || [];
+            }
 
             // Transform assets to a more usable format
             const formattedAssets = assetList.map((asset) => {
                 const assetId = bytesToHex(asset.assetGenesis?.assetId);
+                const normalizedAssetId = normalizeHex(assetId);
 
                 // Check if this asset is in any channels
-                const channelEntry = channelAssetsList.find(ca => ca.assetId === assetId);
+                const channelEntry = channelAssetById.get(normalizedAssetId);
                 const inChannels = Boolean(channelEntry) || isChannelScriptKeyType(asset.scriptKeyType);
 
                 return {
@@ -355,15 +359,36 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                 };
             });
 
-            setAssets(formattedAssets);
+            // Ensure channel assets parsed from listChannels are represented even if tapd omits them.
+            const merged = [...formattedAssets];
+            for (const channelAsset of channelAssetsList) {
+                const channelId = normalizeHex(channelAsset.assetId);
+                const exists = merged.some((asset) => normalizeHex(asset.assetId) === channelId);
+                if (exists) continue;
+
+                merged.push({
+                    assetId: channelAsset.assetId,
+                    name: channelAsset.name || 'Channel Asset',
+                    assetType: 'NORMAL',
+                    amount: channelAsset.amount || channelAsset.channelBalance || '0',
+                    groupKey: null,
+                    scriptKey: null,
+                    anchorOutpoint: null,
+                    scriptKeyType: 'SCRIPT_KEY_CHANNEL',
+                    inChannels: true,
+                    channelBalance: channelAsset.channelBalance || '0',
+                });
+            }
+
+            setAssets(merged);
 
             // Demo mode: prefer a specific asset ID, then channel asset, then first asset.
-            if (!selectedAsset && formattedAssets.length > 0) {
-                const demoAsset = formattedAssets.find(
+            if (!selectedAsset && merged.length > 0) {
+                const demoAsset = merged.find(
                     (asset) => normalizeHex(asset.assetId) === DEMO_SELECTED_ASSET_ID
                 );
-                const channelAsset = formattedAssets.find(a => a.inChannels);
-                setSelectedAsset(demoAsset || channelAsset || formattedAssets[0]);
+                const channelAsset = merged.find((asset) => asset.inChannels);
+                setSelectedAsset(demoAsset || channelAsset || merged[0]);
             }
         } catch (err) {
             console.error('Error fetching Taproot Assets:', err);
@@ -435,14 +460,14 @@ export const useTaprootAssets = (lncClient, isConnected) => {
 
     // Fetch assets when connection status changes
     useEffect(() => {
-        if (isConnected && isTapdAvailable()) {
+        if (isConnected) {
             fetchAssets();
         } else {
             setAssets([]);
             setChannelAssets([]);
             setSelectedAsset(null);
         }
-    }, [isConnected, isTapdAvailable, fetchAssets]);
+    }, [isConnected, fetchAssets]);
 
     return {
         assets,

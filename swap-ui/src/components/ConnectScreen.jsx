@@ -1,5 +1,13 @@
 import React from 'react';
 
+// Icon mapping for known wallets
+function WalletIcon({ connectorId }) {
+  const id = (connectorId || '').toLowerCase();
+  if (id.includes('braavos')) return <span className="text-2xl">🦁</span>;
+  if (id.includes('argent')) return <span className="text-2xl">🌿</span>;
+  return <span className="text-2xl">💼</span>;
+}
+
 function ConnectScreen({
   pairingPhrase,
   setPairingPhrase,
@@ -21,6 +29,7 @@ function ConnectScreen({
   lncIsPaired,
   lncIsConnected,
   onExploreAsGuest,
+  availableConnectors,
 }) {
   const onLncConnect = () => {
     if (lncIsPaired) {
@@ -147,7 +156,7 @@ function ConnectScreen({
       <div className="mb-10 overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-sm transition-all hover:shadow-md">
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <span className="text-orange-500 text-xl">🦊</span> Xverse Wallet (Starknet)
+            <span className="text-orange-500 text-xl">🦊</span> Starknet Wallet (Braavos/Argent)
           </h2>
           {isWalletConnected && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Connected</span>}
         </div>
@@ -176,22 +185,44 @@ function ConnectScreen({
                 onClick={onDisconnectWallet}
                 className="w-full py-3 px-4 rounded-xl text-white font-bold transition-all bg-red-500 hover:bg-red-600 shadow-lg shadow-red-100 flex items-center justify-center gap-2"
               >
-                <span>🚪</span> Logout Xverse
+                <span>🚪</span> Disconnect Wallet
               </button>
             </div>
           ) : (
             <div className="space-y-3">
-              <button
-                onClick={onConnectWallet}
-                className="w-full py-4 px-6 rounded-2xl text-white font-extrabold text-lg transition-all shadow-xl bg-gradient-to-br from-orange-400 via-orange-500 to-yellow-500 hover:scale-[1.02] active:scale-[0.98] shadow-orange-100 flex items-center justify-center gap-3"
-                disabled={isConnectingWallet}
-              >
-                <span>{isConnectingWallet ? 'Connecting Xverse...' : 'Connect with Xverse via Sats Connect'}</span>
-              </button>
-              <p className="text-xs text-slate-500 text-center">
-                Requests your Starknet address from Xverse on Starknet Testnet (Sepolia).
-              </p>
+              {availableConnectors && availableConnectors.length > 0 ? (
+                <>
+                  <p className="text-xs text-slate-500 text-center font-medium mb-1">Select your Starknet wallet:</p>
+                  {availableConnectors.map((connector) => (
+                    <button
+                      key={connector.id}
+                      onClick={() => onConnectWallet(connector)}
+                      disabled={isConnectingWallet}
+                      className="w-full py-3 px-6 rounded-2xl text-white font-extrabold text-base transition-all shadow-lg bg-gradient-to-br from-orange-400 via-orange-500 to-yellow-500 hover:scale-[1.02] active:scale-[0.98] shadow-orange-100 flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <WalletIcon connectorId={connector.id} />
+                      <span>
+                        {isConnectingWallet ? 'Connecting...' : `Connect ${connector.name || connector.id}`}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => onConnectWallet()}
+                    disabled={isConnectingWallet}
+                    className="w-full py-4 px-6 rounded-2xl text-white font-extrabold text-lg transition-all shadow-xl bg-gradient-to-br from-orange-400 via-orange-500 to-yellow-500 hover:scale-[1.02] active:scale-[0.98] shadow-orange-100 flex items-center justify-center gap-3 disabled:opacity-60"
+                  >
+                    <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Starknet Wallet'}</span>
+                  </button>
+                  <p className="text-xs text-slate-500 text-center">
+                    No wallet detected. Make sure Braavos is installed and enabled.
+                  </p>
+                </>
+              )}
             </div>
+
           )}
           {connectionErrorWallet && (
             <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl">

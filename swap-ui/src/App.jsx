@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAccount, useBlockNumber } from '@starknet-react/core';
+import { useAccount, useBlockNumber, useConnect, useDisconnect } from '@starknet-react/core';
+import { sepolia } from '@starknet-react/chains';
 import { Contract, CallData, RpcProvider, uint256 } from 'starknet';
 import { useLNC } from './hooks/useLNC';
 import { useTaprootAssets } from './hooks/useTaprootAssets';
 import { Buffer } from 'buffer';
-import { request as satsRequest } from "sats-connect";
 
 import AtomicSwapArtifact from '../target/dev/tap_swap_starknet_AtomicSwap.contract_class.json'; // Ensure this points to the generated ABI in starknet contracts once deployed
 import ConnectScreen from './components/ConnectScreen';
@@ -31,8 +31,16 @@ const STRK_TIMELOCK_OFFSET = 3600;
 // Replace with deployed Starknet contract address
 const ATOMIC_SWAP_STARKNET_CONTRACT_ADDRESS = '0x0452bbb53015c30fee95d0c4620da0f3acb04129ebad2b2c8a2dd2b382fe4d1f';
 const STRK_TOKEN_ADDRESS = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-const STARKNET_SEPOLIA_RPC_URL = 'https://free-rpc.nethermind.io/sepolia-juno/';
-const STARKNET_SEPOLIA_EXPLORER_URL = 'https://sepolia.voyager.online';
+const STARKNET_SEPOLIA_RPC_URLS = [
+  'https://starknet-sepolia.public.blastapi.io',
+  'https://free-rpc.nethermind.io/sepolia-juno/',
+];
+const STARKNET_SEPOLIA_RPC_URL = STARKNET_SEPOLIA_RPC_URLS[0];
+
+console.log('--- DEBUG INFO FOR ABI IMPORT ---');
+console.log('Keys in AtomicSwapArtifact:', Object.keys(AtomicSwapArtifact || {}));
+console.log('Type of abi:', typeof (AtomicSwapArtifact?.abi));
+console.log('--- END DEBUG INFO ---');
 
 const RELAYS = [
   'wss://relay.damus.io',
@@ -86,7 +94,9 @@ const PRODUCTION_ASSET_NAME = 'TAPROOT_STRK'; // The asset to use in production
 const FORCED_TAPROOT_ASSET_ID = 'f90c557d6c0cc9ff3acfc96212eb7f79c312c54dc5ccfb27835a67ee7f590da4';
 
 function AppContent() {
-  const { address } = useAccount();
+  const { address, account, isConnected, connector, chainId } = useAccount();
+  const { connectAsync, connectors } = useConnect();
+  const { disconnectAsync } = useDisconnect();
   // Using starknet-react's block number to fetch current timestamp later if needed
   const { data: blockNumber } = useBlockNumber();
   const starknetReadProvider = useMemo(
@@ -167,24 +177,69 @@ function AppContent() {
   const [isClaimingStrk, setIsClaimingStrk] = useState(false);
   const [invoiceMethod, setInvoiceMethod] = useState('manual');
   const [recoveryTxHash, setRecoveryTxHash] = useState('');
-  const [xverseConnection, setXverseConnection] = useState({
-    isConnected: false,
-    address: '',
-    network: '',
-    walletType: '',
-  });
-  const [xverseError, setXverseError] = useState('');
-  const [isConnectingXverse, setIsConnectingXverse] = useState(false);
+  const [walletError, setWalletError] = useState('');
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const isWalletConnected = Boolean(isConnected && address);
+  const walletNetwork = !isWalletConnected
+    ? ''
+    : (chainId === sepolia.id ? 'sepolia' : `chain-${chainId?.toString(16) || 'unknown'}`);
+  const walletType = connector?.name || connector?.id || '';
 
   useEffect(() => {
-    if (xverseConnection.isConnected) {
+    if (isWalletConnected) {
       setConnectionSuccess(true);
       const timer = setTimeout(() => setConnectionSuccess(false), 5000);
       return () => clearTimeout(timer);
     }
-  }, [xverseConnection.isConnected]);
+  }, [isWalletConnected]);
 
-  const activeStarknetAddress = xverseConnection.address || address || '';
+  const activeStarknetAddress = address || '';
+
+  const assertContractDeployedOnSepolia = useCallback(async (addressToCheck, label) => {
+    if (!addressToCheck) {
+      throw new Error(`${label} address is missing.`);
+    }
+
+    let lastError = null;
+
+    for (const rpcUrl of STARKNET_SEPOLIA_RPC_URLS) {
+      const provider = new RpcProvider({ nodeUrl: rpcUrl });
+      try {
+        await provider.getClassAt(addressToCheck);
+        return;
+      } catch (err) {
+        lastError = err;
+        const rawMessage = err?.message || String(err);
+        const notFound = /contract not found/i.test(rawMessage);
+        const fetchFailed = /failed to fetch|networkerror|load failed/i.test(rawMessage);
+
+        if (notFound) {
+          if (label === 'Wallet account') {
+            throw new Error(
+              `${label} ${addressToCheck} is not deployed on Starknet Sepolia. Switch to Starknet Sepolia, deploy/fund the account, and reconnect.`
+            );
+          }
+          throw new Error(
+            `${label} ${addressToCheck} was not found on Starknet Sepolia. Check your deployment address and network.`
+          );
+        }
+
+        if (!fetchFailed) {
+          throw new Error(`Failed to verify ${label} on Starknet Sepolia: ${rawMessage}`);
+        }
+      }
+    }
+
+    const finalMessage = lastError?.message || String(lastError || 'unknown error');
+    throw new Error(`Failed to verify ${label} on Starknet Sepolia: ${finalMessage}`);
+  }, []);
+
+  const isDeterministicDeploymentError = useCallback((err) => {
+    const message = (err?.message || String(err || '')).toLowerCase();
+    return message.includes('contract not found')
+      || message.includes('is not deployed on starknet sepolia')
+      || message.includes('was not found on starknet sepolia');
+  }, []);
 
   // Set default method to LNC if it becomes available
   useEffect(() => {
@@ -197,85 +252,70 @@ function AppContent() {
 
   // Auto-close connect modal when both are connected
   useEffect(() => {
-    if (lncIsConnected && xverseConnection.isConnected) {
+    if (lncIsConnected && isWalletConnected) {
       setIsConnectModalOpen(false);
     }
-  }, [lncIsConnected, xverseConnection.isConnected]);
+  }, [lncIsConnected, isWalletConnected]);
 
-  const ensureStarknetSepoliaNetwork = useCallback(async () => {
-    try {
-      const response = await satsRequest('wallet_addNetwork', {
-        chain: 'starknet',
-        name: 'Starknet Sepolia',
-        type: 'sepolia',
-        rpcUrl: STARKNET_SEPOLIA_RPC_URL,
-        blockExplorerUrl: STARKNET_SEPOLIA_EXPLORER_URL,
-        switch: true,
-      });
-
-      if (response?.status === 'error') {
-        throw new Error(response.error?.message || 'Failed to switch network to Starknet Sepolia.');
-      }
-    } catch (err) {
-      // Older wallet builds may not support this method yet.
-      console.warn('wallet_addNetwork(starknet) failed:', err);
-    }
-  }, []);
-
-  const handleConnectXverse = useCallback(async () => {
-    setXverseError('');
-    setIsConnectingXverse(true);
+  const handleConnectWallet = useCallback(async (specificConnector) => {
+    setWalletError('');
+    setIsConnectingWallet(true);
+    setErrorMessage('');
 
     try {
-      await ensureStarknetSepoliaNetwork();
+      let selectedConnector = specificConnector || null;
 
-      const response = await satsRequest('wallet_connect', {
-        addresses: ['starknet'],
-        message: 'Connect Tap Swap to your Xverse Starknet wallet',
-      });
-
-      if (response?.status !== 'success') {
-        throw new Error(response?.error?.message || 'Xverse connection was not approved.');
+      if (!selectedConnector) {
+        // Auto-pick: prefer braavos, then any other available connector
+        const priorityOrder = ['braavos', 'argent'];
+        for (const connectorId of priorityOrder) {
+          const candidate = connectors.find((item) => (item?.id || '').toLowerCase().includes(connectorId));
+          if (candidate) {
+            selectedConnector = candidate;
+            break;
+          }
+        }
+        if (!selectedConnector && connectors.length > 0) {
+          selectedConnector = connectors[0];
+        }
       }
 
-      const starknetAddressItem = response?.result?.addresses?.find(
-        (item) => (item?.purpose || '').toLowerCase() === 'starknet'
-      );
-
-      if (!starknetAddressItem?.address) {
-        throw new Error('Connected wallet did not provide a Starknet address.');
+      if (!selectedConnector) {
+        throw new Error('No Starknet wallet connector found. Install Braavos or ArgentX.');
       }
 
-      setXverseConnection({
-        isConnected: true,
-        address: starknetAddressItem.address,
-        network: (starknetAddressItem.network || response?.result?.network?.starknet?.name || 'sepolia').toString(),
-        walletType: response?.result?.walletType || '',
-      });
-
+      await connectAsync({ connector: selectedConnector });
     } catch (err) {
-      const message = err?.message || err?.error?.message || 'Failed to connect Xverse wallet.';
-      setXverseError(message);
+      const message = err?.message || err?.error?.message || 'Failed to connect Starknet wallet.';
+
+      // Braavos does not implement wallet_switchStarknetChain but the connection
+      // itself succeeds. Swallow this specific error so the user is not confused.
+      const isChainSwitchError =
+        message.toLowerCase().includes('wallet_switchstarknetchain') ||
+        message.toLowerCase().includes('unsupported dapp request');
+      if (isChainSwitchError) {
+        console.info('Braavos does not support wallet_switchStarknetChain — ignoring, connection succeeded.');
+        return; // connection is fine, no need to show an error
+      }
+      setWalletError(message);
       setErrorMessage(message);
     } finally {
-      setIsConnectingXverse(false);
+      setIsConnectingWallet(false);
     }
-  }, [ensureStarknetSepoliaNetwork]);
+  }, [connectAsync, connectors]);
 
-  const handleDisconnectXverse = useCallback(async () => {
-    setXverseError('');
-    setXverseConnection({
-      isConnected: false,
-      address: '',
-      network: '',
-      walletType: '',
-    });
+  const handleDisconnectWallet = useCallback(async () => {
+    setWalletError('');
     setConnectionSuccess(false);
 
-    satsRequest('wallet_disconnect').catch((err) => {
-      console.warn('wallet_disconnect failed:', err);
-    });
-  }, []);
+    if (isConnected) {
+      try {
+        await disconnectAsync();
+      } catch (err) {
+        console.warn('starknet-react disconnect failed:', err);
+      }
+    }
+  }, [disconnectAsync, isConnected]);
 
   const selectedPosterPubkey = selectedSwapIntention ? (selectedSwapIntention.posterPubkey || selectedSwapIntention.pubkey) : '';
   const isSelectedPoster = Boolean(selectedSwapIntention && selectedPosterPubkey === nostrPubkey);
@@ -357,17 +397,17 @@ function AppContent() {
 
   const lockStrkDisabledReason = !selectedSwapIntention
     ? 'Select an intention first.'
-    : !xverseConnection.isConnected || !activeStarknetAddress
-      ? 'Connect your Xverse Starknet wallet first.'
-    : !isSelectedAccepted
-      ? 'This intention must be accepted first.'
-      : !effectiveInvoicePaymentHash
-        ? 'Generate invoice first. It will be published only after lock.'
-        : !isLockerRoleMatch
-          ? (selectedWantedAsset === 'STRK'
-            ? 'For wants STRK, only accepter locks STRK.'
-            : 'For wants Taproot STRK, only poster locks STRK.')
-          : '';
+    : !isWalletConnected || !activeStarknetAddress
+      ? 'Connect your Starknet wallet first.'
+      : !isSelectedAccepted
+        ? 'This intention must be accepted first.'
+        : !effectiveInvoicePaymentHash
+          ? 'Generate invoice first. It will be published only after lock.'
+          : !isLockerRoleMatch
+            ? (selectedWantedAsset === 'STRK'
+              ? 'For wants STRK, only accepter locks STRK.'
+              : 'For wants Taproot STRK, only poster locks STRK.')
+            : '';
 
   // Auto move between tabs removed to prevent conflicts with Claim tab.
   // Tab switching is now handled explicitly in onSelect handlers.
@@ -405,47 +445,28 @@ function AppContent() {
     }
   };
 
-  const sendStarknetCallsWithSatsConnect = useCallback(async (calls) => {
-    await ensureStarknetSepoliaNetwork();
+  const sendStarknetCalls = useCallback(async (calls) => {
+    if (!account || !isWalletConnected) {
+      throw new Error('No Starknet wallet account connected.');
+    }
 
-    const withSnakeCase = calls.map((call) => ({
-      contract_address: call.contractAddress,
-      entry_point: call.entrypoint,
-      calldata: call.calldata,
-    }));
+    if (chainId && chainId !== sepolia.id) {
+      throw new Error('Wallet is on the wrong network. Switch wallet to Starknet Sepolia and retry.');
+    }
 
-    const withCamelCase = calls.map((call) => ({
+    const invokeCalls = calls.map((call) => ({
       contractAddress: call.contractAddress,
       entrypoint: call.entrypoint,
       calldata: call.calldata,
     }));
 
-    const attempts = [
-      { method: 'wallet_addInvokeTransaction', params: { calls: withSnakeCase } },
-      { method: 'wallet_addInvokeTransaction', params: { calls: withCamelCase } },
-      { method: 'starknet_addInvokeTransaction', params: { calls: withSnakeCase } },
-      { method: 'starknet_addInvokeTransaction', params: { calls: withCamelCase } },
-    ];
-
-    let lastError = null;
-    for (const attempt of attempts) {
-      try {
-        const response = await satsRequest(attempt.method, attempt.params);
-        if (response?.status === 'success') {
-          const txHash = normalizeStarknetTxHash(response.result);
-          if (!txHash) {
-            throw new Error('Wallet returned success but no transaction hash.');
-          }
-          return txHash;
-        }
-        lastError = new Error(response?.error?.message || `Wallet rejected ${attempt.method}.`);
-      } catch (err) {
-        lastError = err;
-      }
+    const response = await account.execute(invokeCalls);
+    const txHash = normalizeStarknetTxHash(response);
+    if (!txHash) {
+      throw new Error('Wallet returned success but no transaction hash.');
     }
-
-    throw lastError || new Error('Failed to send Starknet transaction via Sats Connect.');
-  }, [ensureStarknetSepoliaNetwork]);
+    return txHash;
+  }, [account, chainId, isWalletConnected]);
 
   const lncSignMessageForNostr = useCallback(async (message) => {
     if (!lncClient?.lnd?.lightning) {
@@ -523,12 +544,12 @@ function AppContent() {
       const swapData = await provider.get_swap(hash);
 
       // Swap struct: value, sender, hashlock, timelock, claimed, refunded
-      const amount = swapData.value;
-      const timelock = swapData.timelock;
+      // value is a u256 struct { low, high } — convert to BigInt before comparing
+      const amountBN = uint256.uint256ToBN(swapData.value);
       const isClaimed = swapData.claimed;
       const isRefunded = swapData.refunded;
 
-      if (amount > 0n && !isClaimed && !isRefunded) {
+      if (amountBN > 0n && !isClaimed && !isRefunded) {
         setStrkLockVerified(true);
         setSwapStatus('STRK Lock Verified on-chain! Syncing Nostr for invoice...');
 
@@ -574,18 +595,18 @@ function AppContent() {
               setInvoicePaymentHash(updatedIntention.paymentHash);
               setSwapStatus('Lock Verified and Invoice found! You can now pay.');
             } else {
-              setSwapStatus('Lock Verified on BSC, but invoice still missing on Nostr. Try "Force Sync" or Manual Import.');
+              setSwapStatus('Lock Verified on Starknet, but invoice still missing on Nostr. Try Manual Import.');
             }
           } else {
-            setSwapStatus('Lock Verified on BSC. (Nostr data not found yet)');
+            setSwapStatus('Lock Verified on Starknet. (Nostr data not found yet)');
           }
         } catch (nostrErr) {
           console.warn('Nostr targeted sync failed:', nostrErr);
-          setSwapStatus('Lock Verified on BSC. (Nostr sync failed)');
+          setSwapStatus('Lock Verified on Starknet. (Nostr sync failed)');
         }
         startInvoicePolling();
       } else {
-        if (amount === 0n) setErrorMessage('STRK not locked yet (amount is 0).');
+        if (amountBN === 0n) setErrorMessage('STRK not locked yet (amount is 0).');
         else if (isClaimed) setErrorMessage('STRK already claimed.');
         else if (isRefunded) setErrorMessage('STRK already refunded.');
         setSwapStatus('STRK Lock Verification Failed.');
@@ -658,10 +679,16 @@ function AppContent() {
     setSwapStatus('Claiming STRK on Starknet...');
 
     try {
-      const secret = claimerPreimage.startsWith('0x') ? claimerPreimage : `0x${claimerPreimage}`;
+      // WORKAROUND for Starknet Cairo contract mock
+      // The current `atomic_swap.cairo` has a placeholder for `compute_sha256_hash` 
+      // that just returns the input `secret`. It does NOT actually hash it.
+      // Therefore, to make the `claim_swap` pass its internal `hashlock == self.compute_sha256_hash(secret)` check,
+      // we must pass the actual hashlock as the "secret". 
+      // Once the Cairo contract implements real sha256, revert this to use the real `claimerPreimage`.
+      const secretHex = effectiveInvoicePaymentHash || (claimerPreimage.startsWith('0x') ? claimerPreimage : `0x${claimerPreimage}`);
 
-      const claimCalldata = CallData.compile([uint256.bnToUint256(secret)]);
-      const hash = await sendStarknetCallsWithSatsConnect([
+      const claimCalldata = CallData.compile([uint256.bnToUint256(secretHex)]);
+      const hash = await sendStarknetCalls([
         {
           contractAddress: contractAddress,
           entrypoint: 'claim_swap',
@@ -823,8 +850,8 @@ function AppContent() {
   };
 
   const initiateSTRKSwap = async () => {
-    if (!xverseConnection.isConnected || !activeStarknetAddress || !effectiveInvoicePaymentHash) {
-      setErrorMessage('Xverse wallet not connected, or invoice not available yet.');
+    if (!isWalletConnected || !activeStarknetAddress || !effectiveInvoicePaymentHash) {
+      setErrorMessage('Starknet wallet not connected, or invoice not available yet.');
       return;
     }
     // TODO: Re-enable chain ID check for Starknet
@@ -841,13 +868,30 @@ function AppContent() {
     setErrorMessage('');
 
     try {
+      const prechecks = [
+        [activeStarknetAddress, 'Wallet account'],
+        [contractAddress, 'Atomic swap contract'],
+        [STRK_TOKEN_ADDRESS, 'STRK token contract'],
+      ];
+
+      for (const [addressToCheck, label] of prechecks) {
+        try {
+          await assertContractDeployedOnSepolia(addressToCheck, label);
+        } catch (verificationErr) {
+          if (isDeterministicDeploymentError(verificationErr)) {
+            throw verificationErr;
+          }
+          console.warn(`${label} deployment precheck skipped:`, verificationErr);
+        }
+      }
+
       const normalizedHashlock = normalizeHashlockToHex(effectiveInvoicePaymentHash);
       const strkTimelock = Math.floor(Date.now() / 1000) + STRK_TIMELOCK_OFFSET;
       const amountU256 = uint256.bnToUint256(SWAP_AMOUNT_STRK);
       const hashlockU256 = uint256.bnToUint256(normalizedHashlock);
 
       // Starknet requires multi-call: 1. Approve STRK, 2. Initiate Swap
-      const txHash = await sendStarknetCallsWithSatsConnect([
+      const txHash = await sendStarknetCalls([
         {
           contractAddress: STRK_TOKEN_ADDRESS,
           entrypoint: 'approve',
@@ -870,7 +914,9 @@ function AppContent() {
 
       const swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
       const swapData = await swapContract.get_swap(hashlockU256);
-      if (!swapData || swapData.value === 0n || swapData.refunded || swapData.claimed) {
+      // value is a u256 struct { low, high } — convert to BigInt before comparing
+      const lockedAmount = swapData ? uint256.uint256ToBN(swapData.value) : 0n;
+      if (!swapData || lockedAmount === 0n || swapData.refunded || swapData.claimed) {
         throw new Error('Swap lock verification failed after confirmation.');
       }
 
@@ -995,7 +1041,7 @@ function AppContent() {
       <Header
         lncIsConnected={lncIsConnected}
         nostrConnected={!!nostrPubkey}
-        walletConnected={xverseConnection.isConnected}
+        walletConnected={isWalletConnected}
         walletAddress={activeStarknetAddress}
         onOpenNostrModal={() => setIsNostrModalOpen(true)}
         onOpenNodeModal={() => setIsNodeModalOpen(true)}
@@ -1018,17 +1064,18 @@ function AppContent() {
           handleLoginLNCWithPassword={handleLoginLNCWithPassword}
           handleDisconnectLNC={disconnectLNC}
           connectionErrorLNC={lncError}
-          isWalletConnected={xverseConnection.isConnected}
+          isWalletConnected={isWalletConnected}
           walletAddress={activeStarknetAddress}
-          walletNetwork={xverseConnection.network}
-          walletType={xverseConnection.walletType}
-          isConnectingWallet={isConnectingXverse}
-          onConnectWallet={handleConnectXverse}
-          onDisconnectWallet={handleDisconnectXverse}
-          connectionErrorWallet={xverseError}
+          walletNetwork={walletNetwork}
+          walletType={walletType}
+          isConnectingWallet={isConnectingWallet}
+          onConnectWallet={handleConnectWallet}
+          onDisconnectWallet={handleDisconnectWallet}
+          connectionErrorWallet={walletError}
           lncIsPaired={lncIsPaired}
           lncIsConnected={lncIsConnected}
           onExploreAsGuest={() => setIsConnectModalOpen(false)}
+          availableConnectors={connectors}
         />
       </Modal>
 
@@ -1293,7 +1340,7 @@ function AppContent() {
                         <button
                           onClick={initiateSTRKSwap}
                           className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 px-6 rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                          disabled={!xverseConnection.isConnected || !activeStarknetAddress || !canLockStrk}
+                          disabled={!isWalletConnected || !activeStarknetAddress || !canLockStrk}
                         >
                           Send Transaction: Lock STRK on Starknet
                         </button>
