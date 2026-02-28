@@ -40,213 +40,239 @@ function ConnectScreen({
   };
 
   return (
-    <div className="p-2 bg-white">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Connection Center</h1>
-        <p className="text-sm text-slate-500 mt-2">Connect your Lightning node and Starknet Wallet</p>
-      </div>
+    <div className="w-full relative overflow-hidden -m-6 p-6">
+      {/* Ambient background glow */}
+      <div className="absolute top-0 left-1/4 w-1/2 h-32 bg-indigo-500/20 blur-[100px] pointer-events-none"></div>
+      <div className="absolute bottom-0 right-1/4 w-1/2 h-40 bg-rose-500/20 blur-[100px] pointer-events-none"></div>
 
-      {/* LNC Connection Section */}
-      <div className="mb-6 overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-sm transition-all hover:shadow-md">
-        <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <span className="text-indigo-600">⚡</span> Lightning Node (LNC)
-          </h2>
-          {lncIsConnected && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Active</span>}
+      <div className="relative z-10">
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 border border-white/10 mb-6 shadow-lg shadow-indigo-500/10">
+            <span className="text-3xl brightness-125 drop-shadow-md">⚡</span>
+          </div>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Connection Center</h1>
+          <p className="text-sm text-slate-400 mt-3 font-medium">Link your nodes to begin swapping</p>
         </div>
 
-        <div className="p-6">
-          {isConnectingLNC ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
-              <p className="mt-4 text-indigo-600 font-semibold animate-pulse">Establishing LNC Tunnel...</p>
+        <div className="space-y-6">
+          {/* LNC Connection Section */}
+          <div className={`overflow-hidden border rounded-2xl transition-all duration-300 ${lncIsConnected ? 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_30px_-5px_rgba(99,102,241,0.1)]' : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.07]'}`}>
+            <div className="p-5 border-b border-white/5 flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-200 flex items-center gap-3">
+                <span className="text-indigo-400 text-xl">⚡</span> Lightning Node
+                <span className="text-xs font-medium px-2 py-0.5 rounded bg-white/10 text-slate-400 font-mono tracking-widest">LNC</span>
+              </h2>
+              {lncIsConnected ? (
+                <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Active
+                </span>
+              ) : null}
             </div>
-          ) : lncIsConnected ? (
-            <div className="space-y-4">
-              <div className="p-4 bg-green-50 rounded-xl border border-green-100 flex items-center gap-3">
-                <div className="bg-green-500 text-white rounded-full p-1 text-xs">✓</div>
-                <p className="text-green-800 font-semibold">Node Connection Secure</p>
-              </div>
-              <button
-                onClick={handleDisconnectLNC}
-                className="w-full py-3 px-4 rounded-xl text-white font-bold transition-all bg-slate-800 hover:bg-slate-900 shadow-lg hover:shadow-slate-200"
-              >
-                Disconnect Node
-              </button>
-            </div>
-          ) : lncIsPaired ? (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Unlock Session</label>
-                <input
-                  type="password"
-                  value={lncPassword}
-                  onChange={setLncPassword}
-                  placeholder="Enter session password"
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                  disabled={isConnectingLNC}
-                />
-              </div>
-              <button
-                onClick={onLncConnect}
-                className={`w-full py-3 px-4 rounded-xl text-white font-bold transition-all ${lncPassword && !isConnectingLNC
-                  ? 'bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  }`}
-                disabled={!lncPassword || isConnectingLNC}
-              >
-                Connect to Node
-              </button>
-              <button
-                onClick={handleDisconnectLNC}
-                className="w-full py-2 text-xs text-slate-400 hover:text-red-500 font-medium transition-colors"
-              >
-                Clear pairing and start over
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-3 bg-indigo-50 rounded-lg text-[11px] text-indigo-700 font-medium leading-relaxed">
-                ℹ️ Pair your node once using a phrase from <code className="bg-indigo-100 px-1 rounded text-indigo-900 font-bold">Terminal</code> or <code className="bg-indigo-100 px-1 rounded text-indigo-900 font-bold">Polar</code>.
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Pairing Phrase</label>
-                <input
-                  type="text"
-                  value={pairingPhrase}
-                  onChange={setPairingPhrase}
-                  placeholder="e.g. apple banana cherry..."
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                  disabled={isConnectingLNC}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Set Password</label>
-                <input
-                  type="password"
-                  value={lncPassword}
-                  onChange={setLncPassword}
-                  placeholder="Create a password for this session"
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                  disabled={isConnectingLNC}
-                />
-              </div>
-              <button
-                onClick={onLncConnect}
-                className={`w-full py-3 px-4 rounded-xl text-white font-bold transition-all ${pairingPhrase && lncPassword && !isConnectingLNC
-                  ? 'bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 text-lg'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  }`}
-                disabled={!pairingPhrase || !lncPassword || isConnectingLNC}
-              >
-                Pair & Establish Connection
-              </button>
-            </div>
-          )}
-          {connectionErrorLNC && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl">
-              <p className="text-[11px] font-bold text-red-700 uppercase mb-1">Connection Error</p>
-              <p className="text-xs text-red-600 leading-snug">{connectionErrorLNC}</p>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Starknet Wallet Section */}
-      <div className="mb-10 overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-sm transition-all hover:shadow-md">
-        <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <span className="text-orange-500 text-xl">🦊</span> Starknet Wallet (Braavos/Argent)
-          </h2>
-          {isWalletConnected && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Connected</span>}
-        </div>
-
-        <div className="p-6">
-          {isWalletConnected ? (
-            <div className="space-y-4">
-              <div className="p-4 bg-green-50 rounded-xl border border-green-200 flex items-center gap-3 animate-pulse">
-                <div className="bg-green-500 text-white rounded-full p-2 text-sm shadow-lg shadow-green-100 italic">✨</div>
-                <div>
-                  <p className="text-green-800 font-extrabold text-sm">Connection Active!</p>
-                  <p className="text-green-600 text-[10px] font-medium uppercase tracking-tighter">Your Starknet account is ready</p>
+            <div className="p-6">
+              {isConnectingLNC ? (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-500/30 border-t-indigo-400"></div>
+                  <p className="mt-4 text-indigo-400 text-sm font-semibold tracking-wide">Establishing LNC Tunnel...</p>
                 </div>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active Address</label>
-                <p className="text-sm text-slate-800 font-mono break-all font-bold">
-                  {walletAddress}
-                </p>
-                <div className="mt-3 flex items-center justify-between gap-4">
-                  <span className="text-xs font-bold text-slate-500 italic">Network: {walletNetwork || 'Unknown'}</span>
-                  <span className="text-xs font-bold text-slate-500 italic">Type: {walletType || 'software'}</span>
-                </div>
-              </div>
-              <button
-                onClick={onDisconnectWallet}
-                className="w-full py-3 px-4 rounded-xl text-white font-bold transition-all bg-red-500 hover:bg-red-600 shadow-lg shadow-red-100 flex items-center justify-center gap-2"
-              >
-                <span>🚪</span> Disconnect Wallet
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {availableConnectors && availableConnectors.length > 0 ? (
-                <>
-                  <p className="text-xs text-slate-500 text-center font-medium mb-1">Select your Starknet wallet:</p>
-                  {availableConnectors.map((connector) => (
-                    <button
-                      key={connector.id}
-                      onClick={() => onConnectWallet(connector)}
-                      disabled={isConnectingWallet}
-                      className="w-full py-3 px-6 rounded-2xl text-white font-extrabold text-base transition-all shadow-lg bg-gradient-to-br from-orange-400 via-orange-500 to-yellow-500 hover:scale-[1.02] active:scale-[0.98] shadow-orange-100 flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      <WalletIcon connectorId={connector.id} />
-                      <span>
-                        {isConnectingWallet ? 'Connecting...' : `Connect ${connector.name || connector.id}`}
-                      </span>
-                    </button>
-                  ))}
-                </>
-              ) : (
-                <>
+              ) : lncIsConnected ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/20 flex items-center gap-4">
+                    <div className="bg-emerald-500/20 text-emerald-400 rounded-full p-2 text-xs border border-emerald-500/30">✓</div>
+                    <div>
+                      <p className="text-emerald-400 font-bold text-sm tracking-wide">Node Connection Secure</p>
+                      <p className="text-emerald-500/70 text-xs mt-0.5">Ready for invoices & payments</p>
+                    </div>
+                  </div>
                   <button
-                    onClick={() => onConnectWallet()}
-                    disabled={isConnectingWallet}
-                    className="w-full py-4 px-6 rounded-2xl text-white font-extrabold text-lg transition-all shadow-xl bg-gradient-to-br from-orange-400 via-orange-500 to-yellow-500 hover:scale-[1.02] active:scale-[0.98] shadow-orange-100 flex items-center justify-center gap-3 disabled:opacity-60"
+                    onClick={handleDisconnectLNC}
+                    className="w-full py-3.5 px-4 rounded-xl text-slate-300 text-sm font-bold transition-all bg-white/5 hover:bg-white/10 border border-white/10 hover:text-white"
                   >
-                    <span>{isConnectingWallet ? 'Connecting Wallet...' : 'Connect Starknet Wallet'}</span>
+                    Disconnect Node
                   </button>
-                  <p className="text-xs text-slate-500 text-center">
-                    No wallet detected. Make sure Braavos is installed and enabled.
-                  </p>
-                </>
+                </div>
+              ) : lncIsPaired ? (
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-indigo-400/80 uppercase tracking-widest mb-2 pl-1">Unlock Session</label>
+                    <input
+                      type="password"
+                      value={lncPassword}
+                      onChange={setLncPassword}
+                      placeholder="Enter session password"
+                      className="w-full p-3.5 bg-black/40 border border-white/10 rounded-xl text-slate-300 placeholder:text-slate-600 focus:bg-black/60 focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none transition-all shadow-inner text-sm"
+                      disabled={isConnectingLNC}
+                    />
+                  </div>
+                  <button
+                    onClick={onLncConnect}
+                    className={`w-full py-3.5 px-4 rounded-xl text-white text-sm font-bold transition-all flex justify-center items-center gap-2 transform hover:-translate-y-0.5 ${lncPassword && !isConnectingLNC
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 shadow-lg shadow-indigo-500/25 border border-indigo-400/20'
+                      : 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed'
+                      }`}
+                    disabled={!lncPassword || isConnectingLNC}
+                  >
+                    Connect to Node
+                  </button>
+                  <button
+                    onClick={handleDisconnectLNC}
+                    className="w-full py-2 text-xs text-slate-500 hover:text-rose-400 font-medium transition-colors"
+                  >
+                    Clear pairing and start over
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-[11px] text-indigo-300/80 font-medium leading-relaxed">
+                    <span className="text-indigo-400 mr-2">ℹ️</span> Pair your node using a phrase from <code className="bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono">Terminal</code> or <code className="bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono">Polar</code>.
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-indigo-400/80 uppercase tracking-widest mb-2 pl-1">Pairing Phrase</label>
+                    <input
+                      type="text"
+                      value={pairingPhrase}
+                      onChange={setPairingPhrase}
+                      placeholder="e.g. apple banana cherry..."
+                      className="w-full p-3.5 bg-black/40 border border-white/10 rounded-xl text-slate-300 placeholder:text-slate-600 focus:bg-black/60 focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none transition-all shadow-inner text-sm"
+                      disabled={isConnectingLNC}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-indigo-400/80 uppercase tracking-widest mb-2 pl-1">Set Password</label>
+                    <input
+                      type="password"
+                      value={lncPassword}
+                      onChange={setLncPassword}
+                      placeholder="Create a password for this session"
+                      className="w-full p-3.5 bg-black/40 border border-white/10 rounded-xl text-slate-300 placeholder:text-slate-600 focus:bg-black/60 focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none transition-all shadow-inner text-sm"
+                      disabled={isConnectingLNC}
+                    />
+                  </div>
+                  <button
+                    onClick={onLncConnect}
+                    className={`w-full py-4 px-4 rounded-xl text-white text-sm font-bold transition-all transform hover:-translate-y-0.5 ${pairingPhrase && lncPassword && !isConnectingLNC
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 shadow-[0_0_20px_rgba(99,102,241,0.3)] border border-indigo-400/30'
+                      : 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed'
+                      }`}
+                    disabled={!pairingPhrase || !lncPassword || isConnectingLNC}
+                  >
+                    Pair & Establish Connection
+                  </button>
+                </div>
+              )}
+              {connectionErrorLNC && (
+                <div className="mt-5 p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">Connection Error</p>
+                  <p className="text-xs text-rose-300/80 leading-relaxed">{connectionErrorLNC}</p>
+                </div>
               )}
             </div>
+          </div>
 
-          )}
-          {connectionErrorWallet && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl">
-              <p className="text-[11px] font-bold text-red-700 uppercase mb-1">Wallet Error</p>
-              <p className="text-xs text-red-600 leading-snug">{connectionErrorWallet}</p>
+          {/* Starknet Wallet Section */}
+          <div className={`overflow-hidden border rounded-2xl transition-all duration-300 ${isWalletConnected ? 'bg-orange-500/5 border-orange-500/20 shadow-[0_0_30px_-5px_rgba(249,115,22,0.1)]' : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.07]'}`}>
+            <div className="p-5 border-b border-white/5 flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-200 flex items-center gap-3">
+                <span className="text-orange-400 text-xl grayscale-[0.2]">🦊</span> Starknet Wallet
+                <span className="text-xs font-medium px-2 py-0.5 rounded bg-white/10 text-slate-400 font-mono tracking-widest hidden sm:inline-block">WEB3</span>
+              </h2>
+              {isWalletConnected ? (
+                <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Connected
+                </span>
+              ) : null}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Guest Option */}
-      <div className="py-6 border-t border-slate-100 flex flex-col items-center">
-        <p className="text-xs text-slate-400 mb-4 font-medium italic">
-          {lncIsConnected && isWalletConnected
-            ? "You're all set! Ready to start swapping."
-            : "Connect your tools to begin."}
-        </p>
-        <button
-          onClick={onExploreAsGuest}
-          className="group relative px-6 py-2 bg-white text-slate-600 hover:text-indigo-600 font-bold text-sm transition-all"
-        >
-          <span>{lncIsConnected && isWalletConnected ? "Enter App" : "Continue as Guest"}</span>
-          <div className="absolute bottom-1.5 left-6 right-6 h-[2px] bg-slate-200 group-hover:bg-indigo-500 transition-colors"></div>
-        </button>
+            <div className="p-6">
+              {isWalletConnected ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/20 flex flex-col gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-gradient-to-tr from-emerald-400 to-teal-400 text-slate-900 rounded-full p-2 text-sm shadow-lg shadow-emerald-500/20 font-bold border border-emerald-300/50">✨</div>
+                      <div>
+                        <p className="text-emerald-400 font-bold text-sm tracking-wide">Connection Active</p>
+                        <p className="text-emerald-500/70 text-[10px] font-medium uppercase tracking-widest mt-0.5">Starknet account ready</p>
+                      </div>
+                    </div>
+                    <div className="bg-black/30 p-3.5 rounded-lg border border-white/5">
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 pl-1">Active Address</label>
+                      <p className="text-sm text-slate-300 font-mono break-all pl-1">{walletAddress}</p>
+                    </div>
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[10px] font-medium text-slate-400 tracking-wider">NETWORK: <span className="text-slate-300 font-bold">{walletNetwork || 'Unknown'}</span></span>
+                      <span className="text-[10px] font-medium text-slate-400 tracking-wider">TYPE: <span className="text-slate-300 font-bold">{walletType || 'software'}</span></span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={onDisconnectWallet}
+                    className="w-full py-3.5 px-4 rounded-xl text-slate-300 text-sm font-bold transition-all bg-white/5 hover:bg-rose-500/10 border border-white/10 hover:border-rose-500/30 hover:text-rose-400 flex items-center justify-center gap-2"
+                  >
+                    <span className="text-lg">🚪</span> Disconnect Wallet
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {availableConnectors && availableConnectors.length > 0 ? (
+                    <>
+                      <p className="text-xs text-slate-400 text-center font-medium mb-2 tracking-wide">Select your provider</p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {availableConnectors.map((connector) => (
+                          <button
+                            key={connector.id}
+                            onClick={() => onConnectWallet(connector)}
+                            disabled={isConnectingWallet}
+                            className="w-full py-3.5 px-5 rounded-xl text-slate-200 text-sm font-bold transition-all border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="p-1.5 bg-black/30 rounded-lg group-hover:scale-110 transition-transform">
+                                <WalletIcon connectorId={connector.id} />
+                              </div>
+                              <span className="tracking-wide text-slate-300 group-hover:text-white transition-colors">
+                                {connector.name || connector.id}
+                              </span>
+                            </div>
+                            <span className="text-indigo-400/50 group-hover:text-indigo-400 transition-colors opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transform duration-300">→</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center p-6 bg-white/5 rounded-xl border border-white/5">
+                      <div className="text-4xl mb-3 opacity-50 grayscale">🦊</div>
+                      <p className="text-sm text-slate-300 font-medium mb-2">No Wallet Detected</p>
+                      <p className="text-xs text-slate-500">Please install Braavos or Argent X to continue.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {connectionErrorWallet && (
+                <div className="mt-5 p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">Wallet Error</p>
+                  <p className="text-xs text-rose-300/80 leading-relaxed">{connectionErrorWallet}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Guest / Continue Button */}
+        <div className="mt-10 flex flex-col items-center">
+          <button
+            onClick={onExploreAsGuest}
+            className={`group flex flex-col items-center justify-center p-4 w-full rounded-2xl border transition-all duration-500 ${lncIsConnected && isWalletConnected ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 hover:border-emerald-500/50 transform hover:-translate-y-1 shadow-[0_0_30px_rgba(16,185,129,0.15)]' : 'bg-transparent border-transparent hover:bg-white/5'}`}
+          >
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-all duration-500 ${lncIsConnected && isWalletConnected ? 'bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30' : 'bg-white/10 text-slate-400 group-hover:bg-white/20 group-hover:text-white'}`}>
+              {lncIsConnected && isWalletConnected ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+              )}
+            </div>
+            <span className={`font-bold transition-colors tracking-wide ${lncIsConnected && isWalletConnected ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+              {lncIsConnected && isWalletConnected ? 'ENTER APP' : 'CONTINUE AS GUEST'}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

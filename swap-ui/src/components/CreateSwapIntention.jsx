@@ -10,36 +10,55 @@ function CreateSwapIntention({
   setWantedAsset,
 }) {
   return (
-    <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-8">
-      <h2 className="text-2xl font-semibold text-gray-700 mb-4">1. Publish Intention on Nostr</h2>
-      <p className="text-sm text-gray-600 mb-2">
-        First phase is Nostr-only communication. Post your intention and wait for another user to accept.
-      </p>
-
-      <div className="mb-4 p-4 bg-gray-50 rounded-md">
-        <p className="text-sm text-gray-700"><strong>You offer:</strong> {swapAmountSTRK} STRK (Wei/Fri)</p>
-        <p className="text-sm text-gray-700"><strong>You request:</strong> {SWAP_AMOUNT_TAP_SATOSHIS} Taproot Asset STRK equivalent</p>
+    <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl border border-white/50 w-full max-w-2xl mt-8 transition-all hover:shadow-2xl">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Create Swap Offer</h2>
+          <p className="text-sm text-slate-500 font-medium">Post your intention to the Nostr network</p>
+        </div>
       </div>
 
-      <label className="block text-sm text-gray-700 mb-2 font-medium" htmlFor="wanted-asset">
-        I want to receive
-      </label>
-      <select
-        id="wanted-asset"
-        value={wantedAsset}
-        onChange={(e) => setWantedAsset(e.target.value)}
-        className="w-full p-3 mb-4 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        <option value="STRK">STRK</option>
-        <option value="TAPROOT_STRK">Taproot STRK</option>
-      </select>
+      <div className="mb-6 p-5 bg-gradient-to-r from-slate-50 to-indigo-50/30 rounded-2xl border border-indigo-100/50">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Offer</span>
+          <span className="text-lg font-bold text-slate-800">{swapAmountSTRK} STRK <span className="text-xs text-slate-400 font-normal">(Wei/Fri)</span></span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Request</span>
+          <span className="text-lg font-bold text-emerald-600">{SWAP_AMOUNT_TAP_SATOSHIS} Sats <span className="text-xs text-slate-400 font-normal">(Taproot Eqv.)</span></span>
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <label className="block text-sm font-bold text-slate-700 mb-3" htmlFor="wanted-asset">
+          Select Wanted Asset
+        </label>
+        <div className="relative">
+          <select
+            id="wanted-asset"
+            value={wantedAsset}
+            onChange={(e) => setWantedAsset(e.target.value)}
+            className="w-full p-4 pl-5 pr-10 border border-slate-200 rounded-xl bg-white/50 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none transition-all hover:border-indigo-300"
+          >
+            <option value="STRK">STRK Native</option>
+            <option value="TAPROOT_STRK">Taproot STRK</option>
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+        </div>
+      </div>
 
       <button
         onClick={handlePublishSwapIntention}
-        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2"
         disabled={!nostrPubkey || swapStatus.includes('Publishing')}
       >
-        Publish My Swap Intention
+        <span>Broadcast Intention</span>
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
       </button>
     </div>
   );

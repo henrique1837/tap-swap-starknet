@@ -412,9 +412,9 @@ function AppContent() {
   // Auto move between tabs removed to prevent conflicts with Claim tab.
   // Tab switching is now handled explicitly in onSelect handlers.
 
-  const tabClass = (key) => `px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === key
-    ? 'bg-indigo-600 text-white shadow'
-    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+  const tabClass = (key) => `flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all duration-300 text-center flex items-center justify-center gap-2 ${activeTab === key
+    ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+    : 'text-slate-600 hover:bg-white/50 hover:text-indigo-600'
     }`;
 
   // ...
@@ -1117,12 +1117,24 @@ function AppContent() {
             </div>
           )}
 
-          <div className="w-full max-w-2xl mb-4">
-            <div className="flex gap-2 border-b pb-3">
-              <button className={tabClass('create')} onClick={() => setActiveTab('create')}>1. Create</button>
-              <button className={tabClass('market')} onClick={() => setActiveTab('market')}>2. Market</button>
-              <button className={tabClass('execute')} onClick={() => setActiveTab('execute')}>3. Lock (Execute)</button>
-              <button className={tabClass('claim')} onClick={() => setActiveTab('claim')}>4. Claim</button>
+          <div className="w-full max-w-2xl mb-8 mt-4">
+            <div className="flex gap-2 p-1.5 bg-slate-200/50 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-inner">
+              <button className={tabClass('create')} onClick={() => setActiveTab('create')}>
+                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                Create
+              </button>
+              <button className={tabClass('market')} onClick={() => setActiveTab('market')}>
+                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                Market
+              </button>
+              <button className={tabClass('execute')} onClick={() => setActiveTab('execute')}>
+                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
+                Lock
+              </button>
+              <button className={tabClass('claim')} onClick={() => setActiveTab('claim')}>
+                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
+                Claim
+              </button>
             </div>
           </div>
 
@@ -1184,104 +1196,131 @@ function AppContent() {
             <>
               {selectedSwapIntention ? (
                 <>
-                  <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-2">
-                    <h2 className="text-2xl font-semibold text-gray-700 mb-4">Next Step</h2>
+                  <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50">
+                    <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                      <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-slate-800">Next Steps</h2>
+                        <p className="text-sm text-slate-500 font-medium">Follow the instructions to proceed with the swap.</p>
+                      </div>
+                    </div>
 
-                    <p className="text-sm text-gray-700 mb-1">
-                      Selected intention wants: <strong>{selectedWantedAsset || 'STRK'}</strong>
-                    </p>
-                    <p className="text-sm text-gray-700 mb-2">
-                      Current status: <strong>{selectedSwapIntention.status}</strong>
-                    </p>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Intention Wants</p>
+                        <p className="text-lg font-bold text-indigo-700">{selectedWantedAsset || 'STRK Native'}</p>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Status</p>
+                        <p className="text-lg font-bold text-slate-700 capitalize">{selectedSwapIntention.status}</p>
+                      </div>
+                    </div>
 
-                    {selectedWantedAsset === 'STRK' && (
-                      <p className="text-sm text-indigo-700 mb-3">
-                        Rule: accepter generates invoice, locks STRK, then publishes invoice. Poster pays invoice and claims STRK.
-                      </p>
-                    )}
-                    {selectedWantedAsset === 'TAPROOT_STRK' && (
-                      <p className="text-sm text-indigo-700 mb-3">
-                        Rule: poster generates invoice, locks STRK, then publishes invoice. Accepter continues after invoice appears.
-                      </p>
-                    )}
+                    <div className="p-5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                      <h4 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Protocol Rule
+                      </h4>
+                      {selectedWantedAsset === 'STRK' ? (
+                        <p className="text-sm text-indigo-700/80 leading-relaxed">
+                          The <strong className="text-indigo-900">accepter</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">poster</strong> pays the invoice and claims STRK.
+                        </p>
+                      ) : (
+                        <p className="text-sm text-indigo-700/80 leading-relaxed">
+                          The <strong className="text-indigo-900">poster</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">accepter</strong> continues after the invoice appears.
+                        </p>
+                      )}
+                    </div>
 
                     {!isSelectedAccepted && (
-                      <p className="text-sm text-amber-700 mb-3">
-                        This intention is still open. Accept it first in Market tab.
-                      </p>
+                      <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-200 flex gap-3 items-start">
+                        <div className="text-amber-500 mt-0.5">⚠️</div>
+                        <p className="text-sm text-amber-800 font-medium">
+                          This intention is still open. It must be accepted in the Market tab before proceeding.
+                        </p>
+                      </div>
                     )}
-
-                    {/* Close Shared Next Step Card */}
                   </div>
 
                   {/* LOCKER ROLE UI */}
                   {isLockerRoleMatch && (
                     <>
-                      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-2">
-                        <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                          <span>⚡</span> Choose Invoice Method
-                        </h3>
+                      <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-white/50">
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center">⚡</span>
+                            Choose Invoice Method
+                          </h3>
+                        </div>
 
-                        <div className="flex p-1 bg-gray-100 rounded-lg mb-6">
+                        <div className="flex p-1.5 bg-slate-100/80 rounded-2xl mb-8 border border-slate-200/50">
                           <button
                             onClick={() => setInvoiceMethod('lnc')}
                             disabled={!lncIsConnected}
-                            className={`flex-1 py-2 text-sm font-medium rounded-md transition ${invoiceMethod === 'lnc'
-                              ? 'bg-white text-indigo-600 shadow-sm'
-                              : 'text-gray-500 hover:text-gray-700'
+                            className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${invoiceMethod === 'lnc'
+                              ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                              : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
                               } ${!lncIsConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
-                            LNC (Auto)
+                            LNC Node (Auto)
                           </button>
                           <button
                             onClick={() => setInvoiceMethod('manual')}
-                            className={`flex-1 py-2 text-sm font-medium rounded-md transition ${invoiceMethod === 'manual'
-                              ? 'bg-white text-indigo-600 shadow-sm'
-                              : 'text-gray-500 hover:text-gray-700'
+                            className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${invoiceMethod === 'manual'
+                              ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                              : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
                               }`}
                           >
-                            Manual (Polar/External)
+                            Manual (Paste)
                           </button>
                         </div>
 
                         {invoiceMethod === 'lnc' ? (
-                          <div className="space-y-4">
+                          <div className="space-y-5">
                             <button
                               onClick={handleGenerateInvoice}
-                              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-2xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
                               disabled={!canGenerateInvoice}
                             >
-                              Generate Lightning/Taproot Invoice
+                              <span>Generate Lightning/Taproot Invoice</span>
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                             </button>
                             {!!generateInvoiceDisabledReason && (
-                              <p className="text-xs text-gray-600 text-center">{generateInvoiceDisabledReason}</p>
+                              <p className="text-sm text-slate-500 text-center font-medium bg-slate-50 py-2 rounded-xl">{generateInvoiceDisabledReason}</p>
                             )}
 
                             {!selectedAsset && isTapdAvailable && (
-                              <p className="text-xs text-amber-600 text-center">Please select a Taproot Asset above before generating invoice.</p>
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center gap-2 text-amber-700 text-sm font-medium">
+                                <span>⚠️</span> Please select a Taproot Asset above before generating invoice.
+                              </div>
                             )}
 
                             {!isTapdChannelsAvailable && isTapdAvailable && (
-                              <div className="p-3 bg-amber-50 border border-amber-300 rounded-md">
-                                <p className="text-xs text-amber-800">
-                                  <span className="font-semibold">Tap Channels service unavailable:</span> falling back to regular Lightning invoice.
+                              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                                <p className="text-sm text-amber-800 flex items-start gap-2">
+                                  <span>⚠️</span>
+                                  <span><span className="font-bold">Tap Channels service unavailable:</span> falling back to regular Lightning invoice.</span>
                                 </p>
                               </div>
                             )}
 
                             {!isTapdAvailable && (
-                              <p className="text-xs text-red-600 text-center">Taproot Assets daemon not available.</p>
+                              <p className="text-sm text-red-500 text-center font-medium bg-red-50 py-2 rounded-xl border border-red-100">Taproot Assets daemon not available.</p>
                             )}
 
                             {pendingInvoiceForSelected && (
-                              <p className="text-xs text-amber-700 text-center italic">
-                                Invoice is local. It will be published after STRK lock.
-                              </p>
+                              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-center gap-2 text-blue-700 text-sm font-medium">
+                                <span>ℹ️</span> Invoice is local. It will be published after STRK lock.
+                              </div>
                             )}
 
                             {effectiveInvoicePaymentRequest && !manualInvoice && (
-                              <div className="mt-4 p-4 bg-green-50 rounded-md border border-green-100">
-                                <p className="font-semibold text-green-800 text-sm mb-1 text-center">✅ Invoice Ready</p>
+                              <div className="mt-6 p-6 bg-emerald-50/50 rounded-2xl border border-emerald-100 shadow-sm">
+                                <p className="font-bold text-emerald-800 text-sm mb-4 flex items-center gap-2">
+                                  <span className="bg-emerald-200 p-1 rounded-full text-emerald-700">✓</span> Invoice Ready
+                                </p>
                                 <InvoiceDecoder
                                   key={`lnc-${effectiveInvoicePaymentRequest}`}
                                   invoice={effectiveInvoicePaymentRequest}
@@ -1294,29 +1333,31 @@ function AppContent() {
                           </div>
                         ) : (
                           <div className="space-y-4">
-                            <p className="text-sm text-gray-600">
-                              Paste an invoice from Polar or another wallet to continue.
-                            </p>
-                            <textarea
-                              value={manualInvoice}
-                              onChange={(e) => setManualInvoice(e.target.value)}
-                              placeholder="lnbc... or lnbcrt..."
-                              className="w-full p-4 border border-gray-300 rounded-lg font-mono text-sm resize-none min-h-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                            />
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                              <p className="text-sm text-slate-600 font-medium mb-3">
+                                Paste an invoice from Polar or another wallet to continue.
+                              </p>
+                              <textarea
+                                value={manualInvoice}
+                                onChange={(e) => setManualInvoice(e.target.value)}
+                                placeholder="lnbc... or lnbcrt..."
+                                className="w-full p-4 border border-slate-300 rounded-xl font-mono text-sm resize-none min-h-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-inner transition-colors"
+                              />
+                            </div>
                             {manualInvoice && (
-                              <div className="flex justify-between items-center">
+                              <div className="flex justify-between items-center px-2">
                                 <button
                                   onClick={() => setManualInvoice('')}
-                                  className="text-sm text-red-600 hover:text-red-800 underline transition"
+                                  className="text-sm text-red-500 hover:text-red-700 font-bold transition"
                                 >
                                   Clear Invoice
                                 </button>
-                                <span className="text-xs text-gray-500">Invoice detected ({manualInvoice.length} chars)</span>
+                                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">Detected {manualInvoice.length} chars</span>
                               </div>
                             )}
 
                             {manualInvoice && (
-                              <div className="mt-4">
+                              <div className="mt-6 p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm">
                                 <InvoiceDecoder
                                   key={`manual-${manualInvoice}`}
                                   invoice={manualInvoice}
@@ -1330,29 +1371,42 @@ function AppContent() {
                         )}
                       </div>
 
-                      <div className={`bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-6 border-2 transition ${effectiveInvoicePaymentHash ? 'border-orange-100 opacity-100' : 'border-gray-100 opacity-50'}`}>
-                        <h2 className="text-2xl font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                          <span>🔒</span> Final Step: Lock STRK
-                        </h2>
-                        <p className="text-sm text-gray-600 mb-6">
+                      <div className={`bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border-2 transition-all duration-500 ${effectiveInvoicePaymentHash ? 'border-amber-200/50 opacity-100 hover:shadow-2xl hover:border-amber-300/50' : 'border-slate-100/50 opacity-60 grayscale-[0.2]'}`}>
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className={`p-3 rounded-2xl ${effectiveInvoicePaymentHash ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                          </div>
+                          <h2 className={`text-2xl font-bold ${effectiveInvoicePaymentHash ? 'text-slate-800' : 'text-slate-500'}`}>Final Step: Lock STRK</h2>
+                        </div>
+                        <p className={`text-sm mb-8 ${effectiveInvoicePaymentHash ? 'text-slate-600' : 'text-slate-400'}`}>
                           Once you have an invoice (via LNC or Manual paste), lock the STRK on-chain to continue the swap.
                         </p>
                         <button
                           onClick={initiateSTRKSwap}
-                          className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 px-6 rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                          className={`w-full font-bold py-4 px-6 rounded-2xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center gap-3 ${effectiveInvoicePaymentHash ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white' : 'bg-slate-200 text-slate-400'}`}
                           disabled={!isWalletConnected || !activeStarknetAddress || !canLockStrk}
                         >
-                          Send Transaction: Lock STRK on Starknet
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                          <span>Send Transaction: Lock STRK on Starknet</span>
                         </button>
                         {!!lockStrkDisabledReason && (
-                          <p className="text-xs text-amber-700 mt-3 text-center bg-amber-50 p-2 rounded">{lockStrkDisabledReason}</p>
+                          <div className="mt-4 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center justify-center gap-2 text-rose-600 text-sm font-medium">
+                            <span>⚠️</span> {lockStrkDisabledReason}
+                          </div>
                         )}
 
                         {invoicePreimage && (
-                          <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                            <p className="font-bold text-green-800 flex items-center gap-1">✨ Preimage Revealed:</p>
-                            <p className="break-all text-xs text-green-700 font-mono mt-1">{invoicePreimage}</p>
-                            <p className="text-[10px] text-green-600 mt-2 italic">Locker: Use this preimage to claim the wanted asset (Taproot/BTC) on Lightning.</p>
+                          <div className="mt-8 p-6 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-inner">
+                            <p className="font-bold text-emerald-800 flex items-center gap-2 mb-3">
+                              <span className="text-xl">✨</span> Preimage Revealed:
+                            </p>
+                            <div className="bg-white/60 p-4 rounded-xl border border-emerald-100">
+                              <p className="break-all text-sm text-emerald-700 font-mono">{invoicePreimage}</p>
+                            </div>
+                            <p className="text-xs text-emerald-600 mt-3 flex items-center gap-1 font-medium">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                              Locker: Use this preimage to claim the wanted asset (Taproot/BTC) on Lightning.
+                            </p>
                           </div>
                         )}
                       </div>
@@ -1362,8 +1416,12 @@ function AppContent() {
 
                 </>
               ) : (
-                <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-2">
-                  <p className="text-gray-700">No intention selected yet. Go to Market tab and select one.</p>
+                <div className="bg-white/80 backdrop-blur-lg p-10 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50 text-center flex flex-col items-center justify-center">
+                  <div className="bg-slate-100/80 p-6 rounded-full mb-4 inline-block">
+                    <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-700 mb-2">No Swap Selected</h3>
+                  <p className="text-slate-500 font-medium">Head over to the <button onClick={() => setActiveTab('market')} className="text-indigo-600 hover:text-indigo-800 underline underline-offset-2">Market tab</button> and select or accept an intention to continue.</p>
                 </div>
               )}
             </>
@@ -1385,10 +1443,15 @@ function AppContent() {
               {selectedSwapIntention && (
                 <>
                   {isClaimerRoleMatch ? (
-                    <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-8 border-l-4 border-purple-500">
-                      <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-semibold text-gray-800">Your Action: Claim STRK</h2>
-                        <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full uppercase tracking-wider">
+                    <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border-2 border-purple-200/50">
+                      <div className="flex items-center justify-between mb-8 border-b border-purple-100 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-purple-100 text-purple-600 p-3 rounded-2xl">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          </div>
+                          <h2 className="text-2xl font-bold text-slate-800">Your Action: Claim STRK</h2>
+                        </div>
+                        <span className="px-4 py-1.5 bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 text-xs font-bold rounded-xl uppercase tracking-wider shadow-sm">
                           Role: Claimer
                         </span>
                       </div>
@@ -1396,11 +1459,12 @@ function AppContent() {
 
 
                       {/* Step 1: Verify STRK Lock */}
-                      <div className="mb-8 p-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+                      <div className="mb-6 p-6 rounded-2xl border border-slate-200 bg-slate-50 shadow-inner">
                         <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-                          <span>1️⃣</span> Verify STRK Lock
+                          <span className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-sm">1️⃣</span>
+                          Verify STRK Lock
                         </h3>
-                        <p className="text-sm text-slate-600 mb-4">
+                        <p className="text-sm text-slate-600 mb-4 pl-10">
                           Check if the counterparty has locked the STRK on the contract.
                         </p>
 
@@ -1447,121 +1511,142 @@ function AppContent() {
                       </div>
 
                       {/* Step 2: Pay Invoice */}
-                      <div className={`mb-8 p-6 rounded-xl border transition duration-200 ${strkLockVerified ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-200 shadow-inner'}`}>
-                        <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-                          <span>2️⃣</span> Pay Lightning Invoice
-                        </h3>
-                        {!strkLockVerified && <p className="text-[11px] text-amber-600 mb-3 font-semibold bg-amber-50 px-2 py-1 rounded inline-block">⚠️ Step 3 Claim will unlock after you Pay & Verify Step 1.</p>}
+                      <div className={`mb-8 p-6 rounded-2xl border transition-all duration-300 shadow-sm ${strkLockVerified ? 'bg-white border-purple-200' : 'bg-slate-50 border-slate-200 opacity-70 grayscale-[0.2]'}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className={`text-lg font-bold flex items-center gap-2 ${strkLockVerified ? 'text-slate-800' : 'text-slate-500'}`}>
+                            <span className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-sm">2️⃣</span>
+                            Pay Lightning Invoice
+                          </h3>
+                        </div>
+                        {!strkLockVerified && <div className="mt-2 mb-4 p-2.5 bg-amber-50 rounded-xl border border-amber-100 inline-block text-[11px] text-amber-700 font-semibold shadow-inner">⚠️ This step unlocks after verifying the counterparty STRK lock above.</div>}
 
 
                         {effectiveInvoicePaymentRequest ? (
-                          <div className="space-y-4">
+                          <div className={`space-y-4 ${!strkLockVerified ? 'pointer-events-none' : ''}`}>
                             <InvoiceDecoder
                               key={`found-${effectiveInvoicePaymentRequest}`}
                               invoice={effectiveInvoicePaymentRequest}
-                              title="Found Invoice"
+                              title="Found Invoice on Nostr"
                               lncClient={lncClient}
                               assetId={FORCED_TAPROOT_ASSET_ID}
                             />
 
-                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-4">
-                              <div>
-                                <p className="text-xs font-bold text-slate-500 uppercase mb-2">Option A: Pay via LNC</p>
-                                <button
-                                  onClick={handlePayInvoice}
-                                  disabled={(!strkLockVerified && !allowSelfAccept) || !isLncApiReady() || isPayingInvoice}
-                                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg disabled:opacity-50 transition duration-200 shadow-md flex items-center justify-center gap-2"
-                                >
-                                  {isPayingInvoice ? 'Processing Payment...' : '⚡ Pay with Connected Node'}
-                                </button>
-                                {!isLncApiReady() && <p className="text-[10px] text-red-500 mt-1 text-center">Lightning Node not connected via LNC.</p>}
-                                {allowSelfAccept && !strkLockVerified && (
-                                  <p className="text-[10px] text-amber-600 mt-1 text-center">
-                                    Test mode enabled: self-payment is allowed before lock verification.
+                            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-inner space-y-4">
+                              <div className="flex justify-center items-center gap-4 text-xs font-bold text-slate-400 uppercase tracking-wider before:content-[''] before:flex-1 before:h-px before:bg-slate-200 after:content-[''] after:flex-1 after:h-px after:bg-slate-200">Payment Options</div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">Option A: Pay via LNC</p>
+                                  <button
+                                    onClick={handlePayInvoice}
+                                    disabled={(!strkLockVerified && !allowSelfAccept) || !isLncApiReady() || isPayingInvoice}
+                                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2 transform hover:-translate-y-0.5"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    {isPayingInvoice ? 'Processing...' : 'Pay with LNC Node'}
+                                  </button>
+                                  {!isLncApiReady() && <p className="text-[10px] text-red-500 mt-2 text-center bg-red-50 p-1 rounded-lg">LNC Node disconnected.</p>}
+                                  {allowSelfAccept && !strkLockVerified && (
+                                    <p className="text-[10px] text-amber-600 mt-2 text-center font-medium">Test mode: self-payment allowed.</p>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">Option B: Paid Externally?</p>
+                                  <p className="text-[10px] text-slate-500 mb-2 leading-tight">
+                                    If paid with another wallet, paste the <strong className="text-slate-700">32-byte Preimage (Hex)</strong> below.
                                   </p>
+                                  <input
+                                    type="text"
+                                    value={claimerPreimage}
+                                    onChange={(e) => setClaimerPreimage(e.target.value)}
+                                    placeholder="Preimage Hex (0x...)"
+                                    className="w-full p-3 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white shadow-inner transition-colors"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`p-8 bg-slate-50 rounded-2xl border border-slate-200 shadow-inner text-center ${!strkLockVerified ? 'pointer-events-none' : ''}`}>
+                            <div className="flex items-center justify-center w-12 h-12 bg-slate-200 rounded-full mx-auto mb-4 animate-pulse">
+                              <svg className="w-6 h-6 text-slate-500 border-b" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <p className="text-sm text-slate-700 font-bold">Waiting for Invoice from Poster...</p>
+                            <p className="text-xs text-slate-500 mt-2 mb-6 max-w-sm mx-auto">The invoice will appear here automatically once published to Nostr. You can also paste it manually if provided out-of-band.</p>
+
+                            <div className="max-w-md mx-auto space-y-4">
+                              <div className="relative">
+                                <textarea
+                                  value={manualInvoice}
+                                  onChange={(e) => setManualInvoice(e.target.value)}
+                                  placeholder="Paste lnbc... manually"
+                                  className="w-full p-4 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none h-20 bg-white shadow-sm resize-none"
+                                />
+                                {manualInvoice && (
+                                  <button onClick={() => setManualInvoice('')} className="absolute top-2 right-2 p-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 transition-colors">✕</button>
                                 )}
                               </div>
 
-                              <div className="relative flex items-center py-2">
-                                <div className="flex-grow border-t border-slate-300"></div>
-                                <span className="flex-shrink mx-4 text-xs font-bold text-slate-400 uppercase">OR</span>
-                                <div className="flex-grow border-t border-slate-300"></div>
-                              </div>
-
-                              <div>
-                                <p className="text-xs font-bold text-slate-500 uppercase mb-2">Option B: Paid Externally?</p>
-                                <p className="text-[10px] text-slate-500 mb-2">
-                                  If you used a different wallet to pay, enter the 32-byte Preimage (Hex) below to claim.
-                                </p>
+                              <div className="pt-4 border-t border-slate-200">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Or, bypass with preimage</p>
                                 <input
                                   type="text"
                                   value={claimerPreimage}
                                   onChange={(e) => setClaimerPreimage(e.target.value)}
                                   placeholder="Preimage Hex (0x...)"
-                                  className="w-full p-2.5 border border-slate-300 rounded-md text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+                                  className="w-full p-3 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none bg-white shadow-sm"
                                 />
                               </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
-                            <div className="flex flex-col items-center mb-4">
-                              <p className="text-sm text-slate-500 font-bold">Searching for Invoice on Nostr...</p>
-                              <p className="text-xs text-slate-400 mt-1">Wait for the Locker to publish it, or import manually:</p>
-                            </div>
-                            <div className="space-y-3">
-                              <textarea
-                                value={manualInvoice}
-                                onChange={(e) => setManualInvoice(e.target.value)}
-                                placeholder="lnbc... (Lightning Invoice)"
-                                className="w-full p-3 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none h-20 bg-white"
-                              />
-                            </div>
-                            <div className="mt-4 pt-4 border-t border-slate-200">
-                              <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Already Paid?</p>
-                              <input
-                                type="text"
-                                value={claimerPreimage}
-                                onChange={(e) => setClaimerPreimage(e.target.value)}
-                                placeholder="Enter Preimage Hex to jump to Claim step"
-                                className="w-full p-2.5 border border-slate-300 rounded-md text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none bg-white"
-                              />
                             </div>
                           </div>
                         )}
                       </div>
 
                       {/* Step 3: Claim STRK */}
-                      <div className={`mb-6 p-6 rounded-xl border transition duration-200 ${claimerPreimage ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
+                      <div className={`mb-6 p-6 rounded-2xl border transition-all duration-300 shadow-sm ${claimerPreimage ? 'bg-emerald-50 border-emerald-300 scale-[1.01]' : 'bg-slate-50 border-slate-200 opacity-60 grayscale-[0.2]'}`}>
                         <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <span>3️⃣</span> Final Step: Claim STRK
+                          <h3 className={`text-lg font-bold flex items-center gap-2 ${claimerPreimage ? 'text-slate-800' : 'text-slate-500'}`}>
+                            <span className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-sm">3️⃣</span>
+                            Final Step: Claim STRK
                           </h3>
-                          {claimTxHash && <span className="text-xs font-bold text-emerald-600 uppercase">Success!</span>}
+                          {claimTxHash && <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full uppercase tracking-wider animate-pulse">Success!</span>}
                         </div>
-                        <p className="text-sm text-slate-600 mb-4">
-                          Unlock the STRK from the contract using your preimage.
+                        <p className={`text-sm mb-6 ${claimerPreimage ? 'text-slate-600' : 'text-slate-400'}`}>
+                          Unlock the STRK from the Starknet contract using the Lightning payment preimage.
                         </p>
 
                         <button
                           onClick={handleClaimSTRK}
                           disabled={!claimerPreimage || isClaimingStrk}
-                          className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 rounded-xl shadow-lg disabled:opacity-50 transition duration-200 flex items-center justify-center gap-2"
+                          className={`w-full font-bold py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5 ${claimerPreimage ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-lg hover:shadow-xl' : 'bg-slate-200 text-slate-400 disabled:opacity-50'}`}
                         >
-                          {isClaimingStrk ? 'Submitting Claim...' : '🎉 Claim STRK'}
+                          {isClaimingStrk ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                              Submitting Claim...
+                            </>
+                          ) : '🎉 Claim STRK'}
                         </button>
 
                         {claimTxHash && (
-                          <div className="mt-4 p-3 bg-white rounded-lg border border-emerald-200 flex flex-col gap-1">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Transaction Hash</p>
-                            <p className="text-xs text-emerald-700 font-mono break-all">{claimTxHash}</p>
+                          <div className="mt-6 p-4 bg-white/80 backdrop-blur-sm rounded-xl border border-emerald-200 flex flex-col gap-2 shadow-inner">
+                            <div className="flex items-center gap-2 text-emerald-600">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                              <p className="text-xs font-bold uppercase tracking-wider">Transaction Broadcast</p>
+                            </div>
+                            <p className="text-xs text-slate-700 font-mono break-all bg-slate-50 p-2 rounded-lg border border-slate-100">{claimTxHash}</p>
                           </div>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl mt-2">
-                      <p className="text-gray-700">Argument mismatch: Selected intention is not claimable by you (role mismatch).</p>
+                    <div className="bg-white/80 backdrop-blur-lg p-10 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-rose-200/50 flex flex-col items-center justify-center text-center">
+                      <div className="bg-rose-100/80 p-5 rounded-full mb-4 inline-block">
+                        <svg className="w-10 h-10 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-2">Role Mismatch</h3>
+                      <p className="text-slate-500 font-medium">The selected intention is <strong className="text-slate-700">not claimable by you</strong>. Please check your role for this swap.</p>
                     </div>
                   )}
                 </>
@@ -1569,8 +1654,16 @@ function AppContent() {
             </>
           )}
 
-          <div className="text-lg font-semibold mt-8 p-4 bg-indigo-100 rounded-md text-indigo-800 w-full max-w-2xl">
-            Current Swap Status: <span className="font-bold">{swapStatus}</span>
+          <div className="w-full max-w-4xl mt-12 mb-4">
+            <div className="bg-indigo-900/5 backdrop-blur-sm border border-indigo-900/10 rounded-2xl p-5 flex items-center justify-between shadow-inner">
+              <div className="flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                <span className="text-xs font-bold text-indigo-900/60 uppercase tracking-widest">System Status</span>
+              </div>
+              <div className="text-sm font-medium text-indigo-900/80 truncate max-w-2xl px-4">
+                {swapStatus || 'Standing by...'}
+              </div>
+            </div>
           </div>
         </div >
       </div >

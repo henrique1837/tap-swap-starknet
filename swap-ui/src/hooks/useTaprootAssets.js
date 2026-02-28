@@ -214,87 +214,87 @@ export const useTaprootAssets = (lncClient, isConnected) => {
 
             // Strategy 2: fallback to tapd views if available.
             if (lncClient?.tapd?.taprootAssets) {
-            const taprootAssetsApi = lncClient.tapd.taprootAssets;
-            const [allAssetsResult, allBalancesResult, allUtxosResult] = await Promise.allSettled([
-                taprootAssetsApi.listAssets({
-                    includeLeased: true,
-                    scriptKeyType: {
-                        allTypes: true,
-                    },
-                }),
-                taprootAssetsApi.listBalances({
-                    assetId: true,
-                    includeLeased: true,
-                    scriptKeyType: {
-                        allTypes: true,
-                    },
-                }),
-                taprootAssetsApi.listUtxos({
-                    includeLeased: true,
-                    scriptKeyType: {
-                        allTypes: true,
-                    },
-                }),
-            ]);
-            const allAssets = allAssetsResult.status === 'fulfilled' ? (allAssetsResult.value.assets || []) : [];
-            const allBalances = allBalancesResult.status === 'fulfilled' ? (allBalancesResult.value.assetBalances || {}) : {};
-            const allUtxos = allUtxosResult.status === 'fulfilled' ? (allUtxosResult.value.managedUtxos || {}) : {};
+                const taprootAssetsApi = lncClient.tapd.taprootAssets;
+                const [allAssetsResult, allBalancesResult, allUtxosResult] = await Promise.allSettled([
+                    taprootAssetsApi.listAssets({
+                        includeLeased: true,
+                        scriptKeyType: {
+                            allTypes: true,
+                        },
+                    }),
+                    taprootAssetsApi.listBalances({
+                        assetId: true,
+                        includeLeased: true,
+                        scriptKeyType: {
+                            allTypes: true,
+                        },
+                    }),
+                    taprootAssetsApi.listUtxos({
+                        includeLeased: true,
+                        scriptKeyType: {
+                            allTypes: true,
+                        },
+                    }),
+                ]);
+                const allAssets = allAssetsResult.status === 'fulfilled' ? (allAssetsResult.value.assets || []) : [];
+                const allBalances = allBalancesResult.status === 'fulfilled' ? (allBalancesResult.value.assetBalances || {}) : {};
+                const allUtxos = allUtxosResult.status === 'fulfilled' ? (allUtxosResult.value.managedUtxos || {}) : {};
 
-            const metadataByAssetId = new Map();
-            allAssets.forEach((asset) => {
-                const assetId = bytesToHex(asset?.assetGenesis?.assetId);
-                if (!assetId) return;
-                metadataByAssetId.set(assetId, {
-                    name: asset?.assetGenesis?.name || 'Channel Asset',
-                    amount: asset?.amount || '0',
-                    scriptKeyType: asset?.scriptKeyType,
+                const metadataByAssetId = new Map();
+                allAssets.forEach((asset) => {
+                    const assetId = bytesToHex(asset?.assetGenesis?.assetId);
+                    if (!assetId) return;
+                    metadataByAssetId.set(assetId, {
+                        name: asset?.assetGenesis?.name || 'Channel Asset',
+                        amount: asset?.amount || '0',
+                        scriptKeyType: asset?.scriptKeyType,
+                    });
                 });
-            });
 
-            const upsertTapdChannelAsset = (assetId, partial) => {
-                if (!assetId) return;
-                const metadata = metadataByAssetId.get(assetId);
-                upsertChannelAsset(assetId, {
-                    name: partial.name || metadata?.name,
-                    amount: partial.amount || metadata?.amount,
-                    channelBalance: partial.channelBalance || allBalances[assetId]?.balance || '0',
-                    scriptKeyType: partial.scriptKeyType || metadata?.scriptKeyType || 'SCRIPT_KEY_CHANNEL',
-                    source: partial.source,
-                });
-            };
+                const upsertTapdChannelAsset = (assetId, partial) => {
+                    if (!assetId) return;
+                    const metadata = metadataByAssetId.get(assetId);
+                    upsertChannelAsset(assetId, {
+                        name: partial.name || metadata?.name,
+                        amount: partial.amount || metadata?.amount,
+                        channelBalance: partial.channelBalance || allBalances[assetId]?.balance || '0',
+                        scriptKeyType: partial.scriptKeyType || metadata?.scriptKeyType || 'SCRIPT_KEY_CHANNEL',
+                        source: partial.source,
+                    });
+                };
 
-            allAssets.forEach((asset) => {
-                if (!isChannelScriptKeyType(asset?.scriptKeyType)) return;
-                const assetId = bytesToHex(asset?.assetGenesis?.assetId);
-                upsertTapdChannelAsset(assetId, {
-                    name: asset?.assetGenesis?.name || 'Channel Asset',
-                    amount: asset?.amount || '0',
-                    scriptKeyType: asset?.scriptKeyType,
-                    source: 'listAssets',
-                });
-            });
-
-            Object.values(allUtxos).forEach((utxo) => {
-                (utxo?.assets || []).forEach((asset) => {
+                allAssets.forEach((asset) => {
                     if (!isChannelScriptKeyType(asset?.scriptKeyType)) return;
                     const assetId = bytesToHex(asset?.assetGenesis?.assetId);
                     upsertTapdChannelAsset(assetId, {
                         name: asset?.assetGenesis?.name || 'Channel Asset',
                         amount: asset?.amount || '0',
-                        scriptKeyType: asset?.scriptKeyType || 'SCRIPT_KEY_CHANNEL',
-                        source: 'listUtxos',
+                        scriptKeyType: asset?.scriptKeyType,
+                        source: 'listAssets',
                     });
                 });
-            });
 
-            Object.entries(allBalances).forEach(([rawAssetId, entry]) => {
-                const assetId = bytesToHex(rawAssetId);
-                if (!assetId || !channelAssetMap.has(assetId)) return;
-                upsertTapdChannelAsset(assetId, {
-                    channelBalance: entry?.balance || '0',
-                    source: 'listBalances',
+                Object.values(allUtxos).forEach((utxo) => {
+                    (utxo?.assets || []).forEach((asset) => {
+                        if (!isChannelScriptKeyType(asset?.scriptKeyType)) return;
+                        const assetId = bytesToHex(asset?.assetGenesis?.assetId);
+                        upsertTapdChannelAsset(assetId, {
+                            name: asset?.assetGenesis?.name || 'Channel Asset',
+                            amount: asset?.amount || '0',
+                            scriptKeyType: asset?.scriptKeyType || 'SCRIPT_KEY_CHANNEL',
+                            source: 'listUtxos',
+                        });
+                    });
                 });
-            });
+
+                Object.entries(allBalances).forEach(([rawAssetId, entry]) => {
+                    const assetId = bytesToHex(rawAssetId);
+                    if (!assetId || !channelAssetMap.has(assetId)) return;
+                    upsertTapdChannelAsset(assetId, {
+                        channelBalance: entry?.balance || '0',
+                        source: 'listBalances',
+                    });
+                });
             }
 
             const assetsInChannels = Array.from(channelAssetMap.values());
@@ -383,12 +383,15 @@ export const useTaprootAssets = (lncClient, isConnected) => {
             setAssets(merged);
 
             // Demo mode: prefer a specific asset ID, then channel asset, then first asset.
-            if (!selectedAsset && merged.length > 0) {
-                const demoAsset = merged.find(
-                    (asset) => normalizeHex(asset.assetId) === DEMO_SELECTED_ASSET_ID
-                );
-                const channelAsset = merged.find((asset) => asset.inChannels);
-                setSelectedAsset(demoAsset || channelAsset || merged[0]);
+            if (merged.length > 0) {
+                setSelectedAsset(prev => {
+                    if (prev) return prev; // Do not overwrite if already selected
+                    const demoAsset = merged.find(
+                        (asset) => normalizeHex(asset.assetId) === DEMO_SELECTED_ASSET_ID
+                    );
+                    const channelAsset = merged.find((asset) => asset.inChannels);
+                    return demoAsset || channelAsset || merged[0];
+                });
             }
         } catch (err) {
             console.error('Error fetching Taproot Assets:', err);
@@ -397,7 +400,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
         } finally {
             setIsLoading(false);
         }
-    }, [lncClient, isConnected, isTapdAvailable, selectedAsset, fetchChannelAssets]);
+    }, [lncClient, isConnected, isTapdAvailable, fetchChannelAssets]);
 
     // Create a Taproot Asset invoice
     const createAssetInvoice = useCallback(async (asset, amountSats, memo = '') => {

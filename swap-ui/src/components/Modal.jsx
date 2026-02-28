@@ -1,63 +1,63 @@
 import React, { useEffect } from 'react';
 
 function Modal({ isOpen, onClose, title, children }) {
-    // Close on Escape key
-    useEffect(() => {
-        const handleEscape = (e) => {
-            if (e.key === 'Escape' && isOpen) {
-                onClose();
-            }
-        };
+  // Close on Escape key
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
 
-        document.addEventListener('keydown', handleEscape);
-        return () => document.removeEventListener('keydown', handleEscape);
-    }, [isOpen, onClose]);
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
 
-    // Prevent body scroll when modal is open
-    useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = 'unset';
-        }
-        return () => {
-            document.body.style.overflow = 'unset';
-        };
-    }, [isOpen]);
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
-    if (!isOpen) return null;
+  if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn">
-            {/* Backdrop */}
-            <div
-                className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
-                onClick={onClose}
-            ></div>
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
+        onClick={onClose}
+      ></div>
 
-            {/* Modal Content */}
-            <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-scaleIn">
-                {/* Header */}
-                <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-t-2xl flex items-center justify-between z-10">
-                    <h2 className="text-2xl font-bold">{title}</h2>
-                    <button
-                        onClick={onClose}
-                        className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition duration-200"
-                        aria-label="Close modal"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
+      {/* Modal Content */}
+      <div className="relative bg-slate-900/90 border border-white/10 backdrop-blur-xl rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scaleIn">
+        {/* Header */}
+        <div className="flex-none bg-white/5 border-b border-white/10 px-6 py-5 flex items-center justify-between z-10">
+          <h2 className="text-xl font-bold text-slate-100 tracking-tight">{title}</h2>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white hover:bg-white/10 rounded-full p-2 transition duration-200"
+            aria-label="Close modal"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
-                {/* Body */}
-                <div className="p-6">
-                    {children}
-                </div>
-            </div>
+        {/* Body */}
+        <div className="overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          {children}
+        </div>
+      </div>
 
-            <style jsx>{`
+      <style jsx>{`
         @keyframes fadeIn {
           from {
             opacity: 0;
@@ -86,8 +86,8 @@ function Modal({ isOpen, onClose, title, children }) {
           animation: scaleIn 0.3s ease-out;
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }
 
 export default Modal;
