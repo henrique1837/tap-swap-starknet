@@ -8,7 +8,13 @@ function NodeInfo({ lncClient, isConnected }) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const { assets: taprootAssets, isLoading: isLoadingAssets, isTapdAvailable } = useTaprootAssets(lncClient, isConnected);
+    const {
+        assets: taprootAssets,
+        channelAssets: channelTapAssets,
+        isLoading: isLoadingAssets,
+        isTapdAvailable,
+        fetchAssets,
+    } = useTaprootAssets(lncClient, isConnected);
 
     const fetchNodeInfo = useCallback(async () => {
         if (!lncClient?.lnd?.lightning || !isConnected) {
@@ -34,13 +40,17 @@ function NodeInfo({ lncClient, isConnected }) {
                 onChain: onChainBalance,
                 channel: channelBalance,
             });
+
+            if (isTapdAvailable) {
+                await fetchAssets();
+            }
         } catch (err) {
             console.error('Error fetching node info:', err);
             setError(err.message || 'Failed to fetch node information');
         } finally {
             setIsLoading(false);
         }
-    }, [lncClient, isConnected]);
+    }, [lncClient, isConnected, fetchAssets, isTapdAvailable]);
 
     useEffect(() => {
         if (isConnected) {
@@ -229,12 +239,29 @@ function NodeInfo({ lncClient, isConnected }) {
                                 </div>
                             )}
 
-                            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                                <p className="text-xs text-blue-800">
-                                    <span className="font-semibold">ℹ️ Channels Note:</span> Channels with Taproot Assets are not available via LNC at this time.
-                                    In the future, we will update this to show asset channel balances.
-                                    Currently showing on-chain asset balances.
+                            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                                <p className="text-xs text-green-800 mb-2">
+                                    <span className="font-semibold">⚡ Assets in Channels:</span> {channelTapAssets.length}
                                 </p>
+                                {isLoadingAssets ? (
+                                    <p className="text-xs text-green-700">Loading channel assets...</p>
+                                ) : channelTapAssets.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {channelTapAssets.map((asset) => (
+                                            <div key={asset.assetId} className="bg-white p-2 rounded border border-green-200">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs font-semibold text-gray-700">{asset.name}</span>
+                                                    <span className="text-xs font-mono text-green-700">{parseInt(asset.channelBalance || asset.balance || 0).toLocaleString()}</span>
+                                                </div>
+                                                <p className="text-[10px] text-gray-500 font-mono mt-1">
+                                                    {asset.assetId.slice(0, 12)}...{asset.assetId.slice(-12)} [{(asset.sources || []).join(',')}]
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-green-700">No channel assets currently detected.</p>
+                                )}
                             </div>
                         </div>
                     )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAccount, useConnect, useDisconnect, useContract, useSendTransaction, useBlockNumber } from '@starknet-react/core';
-import { Contract, CallData, cairo, uint256 } from 'starknet';
+import { useAccount, useBlockNumber } from '@starknet-react/core';
+import { Contract, CallData, RpcProvider, uint256 } from 'starknet';
 import { useLNC } from './hooks/useLNC';
 import { useTaprootAssets } from './hooks/useTaprootAssets';
 import { Buffer } from 'buffer';
@@ -28,9 +28,11 @@ const SWAP_AMOUNT_TAP_SATOSHIS = 500;
 const SWAP_AMOUNT_STRK = 50000000000000n; // 0.00005 * 10^18
 const STRK_TIMELOCK_OFFSET = 3600;
 
-// TODO: Replace with deployed Starknet contract address
-const ATOMIC_SWAP_STARKNET_CONTRACT_ADDRESS = '0x123...';
+// Replace with deployed Starknet contract address
+const ATOMIC_SWAP_STARKNET_CONTRACT_ADDRESS = '0x0452bbb53015c30fee95d0c4620da0f3acb04129ebad2b2c8a2dd2b382fe4d1f';
 const STRK_TOKEN_ADDRESS = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+const STARKNET_SEPOLIA_RPC_URL = 'https://free-rpc.nethermind.io/sepolia-juno/';
+const STARKNET_SEPOLIA_EXPLORER_URL = 'https://sepolia.voyager.online';
 
 const RELAYS = [
   'wss://relay.damus.io',
@@ -41,19 +43,56 @@ const RELAYS = [
 
 const extractTagValue = (tags, key) => tags.find((tag) => tag[0] === key)?.[1];
 
+const normalizeHashlockToHex = (hashValue) => {
+  if (!hashValue || typeof hashValue !== 'string') {
+    throw new Error('Missing payment hash/hashlock.');
+  }
+
+  const trimmed = hashValue.trim();
+  const raw = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
+
+  let normalizedHex = raw;
+  if (raw.length === 44) {
+    normalizedHex = Buffer.from(raw, 'base64').toString('hex');
+  } else if (raw.length === 88) {
+    const ascii = Buffer.from(raw, 'hex').toString('utf8');
+    normalizedHex = Buffer.from(ascii, 'base64').toString('hex');
+  }
+
+  if (!/^[0-9a-fA-F]+$/.test(normalizedHex)) {
+    throw new Error('Payment hash format is invalid.');
+  }
+  if (normalizedHex.length !== 64) {
+    throw new Error('Payment hash must be 32 bytes (64 hex chars).');
+  }
+
+  return `0x${normalizedHex.toLowerCase()}`;
+};
+
+const normalizeStarknetTxHash = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    return value.transaction_hash || value.transactionHash || value.tx_hash || value.txHash || value.hash || '';
+  }
+  return '';
+};
+
 
 
 // Taproot Assets Configuration
 const DEMO_MODE = true; // Set to false in production
 const PRODUCTION_ASSET_NAME = 'TAPROOT_STRK'; // The asset to use in production
+const FORCED_TAPROOT_ASSET_ID = 'f90c557d6c0cc9ff3acfc96212eb7f79c312c54dc5ccfb27835a67ee7f590da4';
 
 function AppContent() {
-  const { address, isConnected, account } = useAccount();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { address } = useAccount();
   // Using starknet-react's block number to fetch current timestamp later if needed
   const { data: blockNumber } = useBlockNumber();
-  const { sendAsync: sendTransaction } = useSendTransaction({});
+  const starknetReadProvider = useMemo(
+    () => new RpcProvider({ nodeUrl: STARKNET_SEPOLIA_RPC_URL }),
+    []
+  );
 
   const {
     lnc: lncClient,
@@ -145,10 +184,6 @@ function AppContent() {
     }
   }, [xverseConnection.isConnected]);
 
-  const xverseConnector = useMemo(
-    () => connectors.find((c) => c.id.toLowerCase().includes('xverse')) || null,
-    [connectors]
-  );
   const activeStarknetAddress = xverseConnection.address || address || '';
 
   // Set default method to LNC if it becomes available
@@ -167,15 +202,36 @@ function AppContent() {
     }
   }, [lncIsConnected, xverseConnection.isConnected]);
 
+  const ensureStarknetSepoliaNetwork = useCallback(async () => {
+    try {
+      const response = await satsRequest('wallet_addNetwork', {
+        chain: 'starknet',
+        name: 'Starknet Sepolia',
+        type: 'sepolia',
+        rpcUrl: STARKNET_SEPOLIA_RPC_URL,
+        blockExplorerUrl: STARKNET_SEPOLIA_EXPLORER_URL,
+        switch: true,
+      });
+
+      if (response?.status === 'error') {
+        throw new Error(response.error?.message || 'Failed to switch network to Starknet Sepolia.');
+      }
+    } catch (err) {
+      // Older wallet builds may not support this method yet.
+      console.warn('wallet_addNetwork(starknet) failed:', err);
+    }
+  }, []);
+
   const handleConnectXverse = useCallback(async () => {
     setXverseError('');
     setIsConnectingXverse(true);
 
     try {
+      await ensureStarknetSepoliaNetwork();
+
       const response = await satsRequest('wallet_connect', {
         addresses: ['starknet'],
         message: 'Connect Tap Swap to your Xverse Starknet wallet',
-        network: 'Testnet',
       });
 
       if (response?.status !== 'success') {
@@ -193,13 +249,10 @@ function AppContent() {
       setXverseConnection({
         isConnected: true,
         address: starknetAddressItem.address,
-        network: starknetAddressItem.network || response?.result?.network?.starknet?.name || '',
+        network: (starknetAddressItem.network || response?.result?.network?.starknet?.name || 'sepolia').toString(),
         walletType: response?.result?.walletType || '',
       });
 
-      if (!isConnected && xverseConnector) {
-        connect({ connector: xverseConnector });
-      }
     } catch (err) {
       const message = err?.message || err?.error?.message || 'Failed to connect Xverse wallet.';
       setXverseError(message);
@@ -207,24 +260,22 @@ function AppContent() {
     } finally {
       setIsConnectingXverse(false);
     }
-  }, [connect, isConnected, xverseConnector]);
+  }, [ensureStarknetSepoliaNetwork]);
 
   const handleDisconnectXverse = useCallback(async () => {
     setXverseError('');
-    try {
-      await satsRequest('wallet_disconnect');
-    } catch (err) {
-      console.warn('wallet_disconnect failed:', err);
-    }
-
     setXverseConnection({
       isConnected: false,
       address: '',
       network: '',
       walletType: '',
     });
-    disconnect();
-  }, [disconnect]);
+    setConnectionSuccess(false);
+
+    satsRequest('wallet_disconnect').catch((err) => {
+      console.warn('wallet_disconnect failed:', err);
+    });
+  }, []);
 
   const selectedPosterPubkey = selectedSwapIntention ? (selectedSwapIntention.posterPubkey || selectedSwapIntention.pubkey) : '';
   const isSelectedPoster = Boolean(selectedSwapIntention && selectedPosterPubkey === nostrPubkey);
@@ -255,17 +306,22 @@ function AppContent() {
     pendingInvoice && selectedSwapIntention && pendingInvoice.dTag === selectedSwapIntention.dTag,
   );
 
+  const sanitizedManualInvoice = useMemo(() => {
+    if (!manualInvoice) return '';
+    return manualInvoice.trim().replace(/\s+/g, '');
+  }, [manualInvoice]);
+
   const manualInvoiceHash = useMemo(() => {
-    if (!manualInvoice) return null;
+    if (!sanitizedManualInvoice) return null;
     try {
-      const decoded = decode(manualInvoice);
+      const decoded = decode(sanitizedManualInvoice.toLowerCase());
       const paymentHashSection = decoded.sections.find(s => s.name === 'payment_hash');
       const val = paymentHashSection?.value;
       return val ? (val.startsWith('0x') ? val : `0x${val}`) : null;
     } catch (e) {
       return null;
     }
-  }, [manualInvoice]);
+  }, [sanitizedManualInvoice]);
 
   const effectiveInvoicePaymentHash = useMemo(() => {
     // Priority:
@@ -280,11 +336,11 @@ function AppContent() {
   }, [manualInvoiceHash, selectedSwapIntention, invoicePaymentHash, pendingInvoiceForSelected, pendingInvoice]);
 
   const effectiveInvoicePaymentRequest = useMemo(() => {
-    return manualInvoice ||
+    return sanitizedManualInvoice ||
       selectedSwapIntention?.paymentRequest ||
       invoicePaymentRequest ||
       (pendingInvoiceForSelected ? pendingInvoice?.paymentRequest : '');
-  }, [manualInvoice, selectedSwapIntention, invoicePaymentRequest, pendingInvoiceForSelected, pendingInvoice]);
+  }, [sanitizedManualInvoice, selectedSwapIntention, invoicePaymentRequest, pendingInvoiceForSelected, pendingInvoice]);
 
   const canGenerateInvoice = Boolean(selectedSwapIntention) && isSelectedAccepted && isPublisherRoleMatch;
   const canLockStrk = Boolean(selectedSwapIntention) && isSelectedAccepted && isLockerRoleMatch && Boolean(effectiveInvoicePaymentHash);
@@ -301,6 +357,8 @@ function AppContent() {
 
   const lockStrkDisabledReason = !selectedSwapIntention
     ? 'Select an intention first.'
+    : !xverseConnection.isConnected || !activeStarknetAddress
+      ? 'Connect your Xverse Starknet wallet first.'
     : !isSelectedAccepted
       ? 'This intention must be accepted first.'
       : !effectiveInvoicePaymentHash
@@ -346,6 +404,48 @@ function AppContent() {
       setErrorMessage(err.message || 'Failed to login to LNC node.');
     }
   };
+
+  const sendStarknetCallsWithSatsConnect = useCallback(async (calls) => {
+    await ensureStarknetSepoliaNetwork();
+
+    const withSnakeCase = calls.map((call) => ({
+      contract_address: call.contractAddress,
+      entry_point: call.entrypoint,
+      calldata: call.calldata,
+    }));
+
+    const withCamelCase = calls.map((call) => ({
+      contractAddress: call.contractAddress,
+      entrypoint: call.entrypoint,
+      calldata: call.calldata,
+    }));
+
+    const attempts = [
+      { method: 'wallet_addInvokeTransaction', params: { calls: withSnakeCase } },
+      { method: 'wallet_addInvokeTransaction', params: { calls: withCamelCase } },
+      { method: 'starknet_addInvokeTransaction', params: { calls: withSnakeCase } },
+      { method: 'starknet_addInvokeTransaction', params: { calls: withCamelCase } },
+    ];
+
+    let lastError = null;
+    for (const attempt of attempts) {
+      try {
+        const response = await satsRequest(attempt.method, attempt.params);
+        if (response?.status === 'success') {
+          const txHash = normalizeStarknetTxHash(response.result);
+          if (!txHash) {
+            throw new Error('Wallet returned success but no transaction hash.');
+          }
+          return txHash;
+        }
+        lastError = new Error(response?.error?.message || `Wallet rejected ${attempt.method}.`);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error('Failed to send Starknet transaction via Sats Connect.');
+  }, [ensureStarknetSepoliaNetwork]);
 
   const lncSignMessageForNostr = useCallback(async (message) => {
     if (!lncClient?.lnd?.lightning) {
@@ -418,7 +518,7 @@ function AppContent() {
       }
 
       // Contract uses: swaps: Map<u256, Swap>
-      const provider = new Contract(AtomicSwapArtifact.abi, contractAddress, account);
+      const provider = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
       // get_swap returns the Swap struct natively parsed
       const swapData = await provider.get_swap(hash);
 
@@ -511,7 +611,9 @@ function AppContent() {
 
     try {
       const response = await lncClient.lnd.lightning.sendPaymentSync({
-        payment_request: effectiveInvoicePaymentRequest
+        paymentRequest: effectiveInvoicePaymentRequest,
+        // In test mode we allow paying our own invoice for end-to-end testing.
+        allowSelfPayment: allowSelfAccept,
       });
 
       if (response.paymentError) {
@@ -558,21 +660,19 @@ function AppContent() {
     try {
       const secret = claimerPreimage.startsWith('0x') ? claimerPreimage : `0x${claimerPreimage}`;
 
-      // Call claim_swap on Starknet Contract using starknet-react
-      const result = await sendTransaction([
+      const claimCalldata = CallData.compile([uint256.bnToUint256(secret)]);
+      const hash = await sendStarknetCallsWithSatsConnect([
         {
           contractAddress: contractAddress,
           entrypoint: 'claim_swap',
-          calldata: CallData.compile([uint256.bnToUint256(secret)]),
+          calldata: claimCalldata,
         },
       ]);
-      const hash = result?.transaction_hash;
 
       setClaimTxHash(hash);
       setSwapStatus('Claim transaction sent! Waiting for confirmation (txn: ' + hash + ')...');
 
-      // TODO: poll provider.waitForTransaction(hash)
-      // await provider.waitForTransaction(hash);
+      await starknetReadProvider.waitForTransaction(hash);
 
       setSwapStatus('STRK Claimed Successfully! Swap Completed.');
       setClaimedSwapDTags(prev => [...prev, selectedSwapIntention.dTag]);
@@ -610,11 +710,15 @@ function AppContent() {
           `Swap for ${SWAP_AMOUNT_STRK.toString()} STRK (Taproot Asset: ${selectedAsset.name})`
         );
 
+        if (!invoice?.isAssetInvoice) {
+          throw new Error('Generated invoice is not recognized as Taproot Asset invoice.');
+        }
         return invoice;
       } catch (err) {
         console.error('Error creating Taproot Asset invoice:', err);
-        setErrorMessage(`Failed to create Taproot Asset invoice: ${err.message || String(err)}. Falling back to regular Lightning invoice.`);
-        // Fall through to regular Lightning invoice
+        setErrorMessage(`Failed to create Taproot Asset invoice: ${err.message || String(err)}`);
+        setSwapStatus('Taproot Asset invoice failed');
+        return null;
       }
     }
 
@@ -626,7 +730,7 @@ function AppContent() {
       const invoiceAmountMsat = SWAP_AMOUNT_TAP_SATOSHIS * 1000;
       const addInvoiceResponse = await lncClient.lnd.lightning.addInvoice({
         valueMsat: invoiceAmountMsat.toString(),
-        memo: `Swap for ${SWAP_AMOUNT_STRK.toString()} STRK (via LNC-web)${selectedAsset ? ` - Demo: ${selectedAsset.name}` : ''}`,
+        memo: `Swap for ${SWAP_AMOUNT_STRK.toString()} STRK (via LNC-web)${selectedAsset ? ` - Asset: ${selectedAsset.name}` : ''}`,
         private: true,
       });
 
@@ -664,6 +768,10 @@ function AppContent() {
       setErrorMessage('You are not the invoice generator for this selected flow.');
       return;
     }
+
+    // Manual invoice has top priority in effectiveInvoicePaymentRequest.
+    // Clear it so LNC-generated invoices are immediately visible/usable.
+    setManualInvoice('');
 
     const invoice = await createInvoice();
     if (!invoice) return;
@@ -715,8 +823,8 @@ function AppContent() {
   };
 
   const initiateSTRKSwap = async () => {
-    if (!account || !activeStarknetAddress || !effectiveInvoicePaymentHash) {
-      setErrorMessage('Wallet signer not connected, or invoice not available yet.');
+    if (!xverseConnection.isConnected || !activeStarknetAddress || !effectiveInvoicePaymentHash) {
+      setErrorMessage('Xverse wallet not connected, or invoice not available yet.');
       return;
     }
     // TODO: Re-enable chain ID check for Starknet
@@ -733,34 +841,45 @@ function AppContent() {
     setErrorMessage('');
 
     try {
+      const normalizedHashlock = normalizeHashlockToHex(effectiveInvoicePaymentHash);
       const strkTimelock = Math.floor(Date.now() / 1000) + STRK_TIMELOCK_OFFSET;
+      const amountU256 = uint256.bnToUint256(SWAP_AMOUNT_STRK);
+      const hashlockU256 = uint256.bnToUint256(normalizedHashlock);
 
       // Starknet requires multi-call: 1. Approve STRK, 2. Initiate Swap
-      const result = await sendTransaction([
+      const txHash = await sendStarknetCallsWithSatsConnect([
         {
           contractAddress: STRK_TOKEN_ADDRESS,
           entrypoint: 'approve',
-          calldata: CallData.compile([contractAddress, uint256.bnToUint256(SWAP_AMOUNT_STRK)]),
+          calldata: CallData.compile([contractAddress, amountU256]),
         },
         {
           contractAddress: contractAddress,
           entrypoint: 'initiate_swap',
           calldata: CallData.compile([
-            uint256.bnToUint256(effectiveInvoicePaymentHash),
+            hashlockU256,
             strkTimelock,
-            uint256.bnToUint256(SWAP_AMOUNT_STRK)
+            amountU256
           ]),
         },
       ]);
-      const hash = result?.transaction_hash;
 
-      // TODO: poll provider.waitForTransaction(hash)
-      // await provider.waitForTransaction(hash);
+      setSwapStatus(`Lock transaction submitted (${txHash}). Waiting for confirmation...`);
+      await starknetReadProvider.waitForTransaction(txHash);
+      setSwapStatus('Transaction confirmed. Verifying lock on-chain...');
+
+      const swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+      const swapData = await swapContract.get_swap(hashlockU256);
+      if (!swapData || swapData.value === 0n || swapData.refunded || swapData.claimed) {
+        throw new Error('Swap lock verification failed after confirmation.');
+      }
+
+      setInvoicePaymentHash(normalizedHashlock);
 
       const invoiceToPublish = pendingInvoiceForSelected ? pendingInvoice :
         (manualInvoice && manualInvoiceHash === effectiveInvoicePaymentHash ? {
           paymentRequest: manualInvoice,
-          paymentHash: manualInvoiceHash
+          paymentHash: normalizedHashlock
         } : null);
 
       if (invoiceToPublish && selectedSwapIntention) {
@@ -870,14 +989,6 @@ function AppContent() {
     }
   }, [selectedSwapIntention, pendingInvoice]);
 
-  const handleGlobalLogout = useCallback(() => {
-    disconnectLNC();
-    handleDisconnectXverse();
-    setIsConnectModalOpen(true);
-  }, [disconnectLNC, handleDisconnectXverse]);
-
-
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
       {/* Header */}
@@ -888,7 +999,7 @@ function AppContent() {
         walletAddress={activeStarknetAddress}
         onOpenNostrModal={() => setIsNostrModalOpen(true)}
         onOpenNodeModal={() => setIsNodeModalOpen(true)}
-        onOpenConnectModal={lncIsConnected && xverseConnection.isConnected ? handleGlobalLogout : () => setIsConnectModalOpen(true)}
+        onOpenConnectModal={() => setIsConnectModalOpen(true)}
       />
 
       {/* Modals */}
@@ -1104,10 +1215,9 @@ function AppContent() {
                             )}
 
                             {!isTapdChannelsAvailable && isTapdAvailable && (
-                              <div className="p-3 bg-blue-50 border border-blue-300 rounded-md">
-                                <p className="text-xs text-blue-800">
-                                  <span className="font-semibold">ℹ️ LNC Limitation:</span> Taproot Asset Channels are not yet supported via LNC.
-                                  Regular Lightning (BTC) invoices will be used instead.
+                              <div className="p-3 bg-amber-50 border border-amber-300 rounded-md">
+                                <p className="text-xs text-amber-800">
+                                  <span className="font-semibold">Tap Channels service unavailable:</span> falling back to regular Lightning invoice.
                                 </p>
                               </div>
                             )}
@@ -1126,8 +1236,11 @@ function AppContent() {
                               <div className="mt-4 p-4 bg-green-50 rounded-md border border-green-100">
                                 <p className="font-semibold text-green-800 text-sm mb-1 text-center">✅ Invoice Ready</p>
                                 <InvoiceDecoder
+                                  key={`lnc-${effectiveInvoicePaymentRequest}`}
                                   invoice={effectiveInvoicePaymentRequest}
                                   title="LNC Invoice Details"
+                                  lncClient={lncClient}
+                                  assetId={FORCED_TAPROOT_ASSET_ID}
                                 />
                               </div>
                             )}
@@ -1158,8 +1271,11 @@ function AppContent() {
                             {manualInvoice && (
                               <div className="mt-4">
                                 <InvoiceDecoder
+                                  key={`manual-${manualInvoice}`}
                                   invoice={manualInvoice}
                                   title="Pasted Invoice Details"
+                                  lncClient={lncClient}
+                                  assetId={FORCED_TAPROOT_ASSET_ID}
                                 />
                               </div>
                             )}
@@ -1177,7 +1293,7 @@ function AppContent() {
                         <button
                           onClick={initiateSTRKSwap}
                           className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 px-6 rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                          disabled={!isConnected || !canLockStrk}
+                          disabled={!xverseConnection.isConnected || !activeStarknetAddress || !canLockStrk}
                         >
                           Send Transaction: Lock STRK on Starknet
                         </button>
@@ -1293,19 +1409,30 @@ function AppContent() {
 
                         {effectiveInvoicePaymentRequest ? (
                           <div className="space-y-4">
-                            <InvoiceDecoder invoice={effectiveInvoicePaymentRequest} title="Found Invoice" />
+                            <InvoiceDecoder
+                              key={`found-${effectiveInvoicePaymentRequest}`}
+                              invoice={effectiveInvoicePaymentRequest}
+                              title="Found Invoice"
+                              lncClient={lncClient}
+                              assetId={FORCED_TAPROOT_ASSET_ID}
+                            />
 
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-4">
                               <div>
                                 <p className="text-xs font-bold text-slate-500 uppercase mb-2">Option A: Pay via LNC</p>
                                 <button
                                   onClick={handlePayInvoice}
-                                  disabled={!strkLockVerified || !isLncApiReady() || isPayingInvoice}
+                                  disabled={(!strkLockVerified && !allowSelfAccept) || !isLncApiReady() || isPayingInvoice}
                                   className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg disabled:opacity-50 transition duration-200 shadow-md flex items-center justify-center gap-2"
                                 >
                                   {isPayingInvoice ? 'Processing Payment...' : '⚡ Pay with Connected Node'}
                                 </button>
                                 {!isLncApiReady() && <p className="text-[10px] text-red-500 mt-1 text-center">Lightning Node not connected via LNC.</p>}
+                                {allowSelfAccept && !strkLockVerified && (
+                                  <p className="text-[10px] text-amber-600 mt-1 text-center">
+                                    Test mode enabled: self-payment is allowed before lock verification.
+                                  </p>
+                                )}
                               </div>
 
                               <div className="relative flex items-center py-2">
