@@ -101,6 +101,7 @@ function SwapIntentionsList({
 }) {
   const { nostrPubkey, fetchSwapIntentions, acceptSwapIntention } = useNostr();
   const [swapIntentions, setSwapIntentions] = useState([]);
+  const [finalizedIntentions, setFinalizedIntentions] = useState([]);
   const [isFetchingIntentions, setIsFetchingIntentions] = useState(false);
 
   const fetchAndSetSwapIntentions = useCallback(async () => {
@@ -109,29 +110,33 @@ function SwapIntentionsList({
     try {
       const fetchedIntentions = await fetchSwapIntentions();
 
-      // Filter intentions
-      const filteredIntentions = fetchedIntentions.filter((intention) => {
-        // 1. Fully open intentions should be visible to everyone
-        if (intention.status === 'open') {
-          return true;
-        }
+      const filteredActive = [];
+      const filteredFinalized = [];
 
-        // 2. If it is NOT open (accepted, invoice_ready, etc.), 
-        // it should only be visible to the original poster or the accepter.
-        if (nostrPubkey) {
-          const posterPubkey = intention.posterPubkey || intention.pubkey;
-          const isPoster = nostrPubkey === posterPubkey;
-          const isAccepter = intention.acceptedByPubkey === nostrPubkey;
-          if (isPoster || isAccepter) {
-            return true; // Partially or fully involved user sees it
+      fetchedIntentions.forEach((intention) => {
+        // Separate finalized vs active
+        if (intention.status === 'claimed' || intention.status === 'refunded') {
+          // Finalized orders are visible to everyone
+          filteredFinalized.push(intention);
+        } else {
+          // 1. Fully open intentions should be visible to everyone
+          if (intention.status === 'open') {
+            filteredActive.push(intention);
+          } else if (nostrPubkey) {
+            // 2. If it is NOT open (accepted, invoice_ready, locked), 
+            // it should only be visible to the original poster or the accepter.
+            const posterPubkey = intention.posterPubkey || intention.pubkey;
+            const isPoster = nostrPubkey === posterPubkey;
+            const isAccepter = intention.acceptedByPubkey === nostrPubkey;
+            if (isPoster || isAccepter) {
+              filteredActive.push(intention);
+            }
           }
         }
-
-        // Otherwise hide it
-        return false;
       });
 
-      setSwapIntentions(filteredIntentions);
+      setSwapIntentions(filteredActive);
+      setFinalizedIntentions(filteredFinalized);
     } catch (err) {
       console.error('Error fetching swap intentions:', err);
       setErrorMessage(`Failed to load swap intentions: ${err.message || String(err)}`);
@@ -245,6 +250,30 @@ function SwapIntentionsList({
           );
         })}
       </div>
+
+      {/* Finalized Orders Section */}
+      {finalizedIntentions.length > 0 && (
+        <div className="mt-12">
+          <div className="flex items-center gap-3 mb-4">
+            <h3 className="text-xl font-bold text-slate-700">Finalized Orders</h3>
+            <div className="h-px bg-slate-200 flex-1"></div>
+          </div>
+          <div className="space-y-4 opacity-75 hover:opacity-100 transition-opacity duration-300">
+            {finalizedIntentions.map((intention) => {
+              return (
+                <SimpleSwapIntentionCard
+                  key={intention.dTag || intention.id}
+                  intention={intention}
+                  onSelect={handleSelectIntention}
+                  isSelected={selectedSwapIntention?.dTag === intention.dTag}
+                  onAccept={handleAcceptIntention}
+                  canAccept={false} // never accept finalized
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

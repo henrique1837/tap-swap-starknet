@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAccount, useBlockNumber, useConnect, useDisconnect } from '@starknet-react/core';
+import { useAccount, useConnect, useDisconnect, useProvider } from '@starknet-react/core';
 import { sepolia } from '@starknet-react/chains';
 import { Contract, CallData, RpcProvider, uint256 } from 'starknet';
 import { useLNC } from './hooks/useLNC';
@@ -32,7 +32,7 @@ const STRK_TIMELOCK_OFFSET = 3600;
 const ATOMIC_SWAP_STARKNET_CONTRACT_ADDRESS = '0x0452bbb53015c30fee95d0c4620da0f3acb04129ebad2b2c8a2dd2b382fe4d1f';
 const STRK_TOKEN_ADDRESS = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 const STARKNET_SEPOLIA_RPC_URLS = [
-  'https://starknet-sepolia.public.blastapi.io',
+  'https://api.zan.top/public/starknet-sepolia/rpc/v0_10',
   'https://free-rpc.nethermind.io/sepolia-juno/',
 ];
 const STARKNET_SEPOLIA_RPC_URL = STARKNET_SEPOLIA_RPC_URLS[0];
@@ -97,8 +97,9 @@ function AppContent() {
   const { address, account, isConnected, connector, chainId } = useAccount();
   const { connectAsync, connectors } = useConnect();
   const { disconnectAsync } = useDisconnect();
-  // Using starknet-react's block number to fetch current timestamp later if needed
-  const { data: blockNumber } = useBlockNumber();
+  // Using starknet-react hook for direct provider interaction
+  const { provider: publicClient } = useProvider();
+
   const starknetReadProvider = useMemo(
     () => new RpcProvider({ nodeUrl: STARKNET_SEPOLIA_RPC_URL }),
     []
@@ -487,20 +488,62 @@ function AppContent() {
   }, [isLncApiReady, nostrPubkey, isLoadingNostr, deriveNostrKeysFromLNC, lncSignMessageForNostr]);
 
   const verifySTRKLock = async () => {
+    if (!selectedSwapIntention) {
+      setErrorMessage('Select an intention first.');
+      return;
+    }
+
+    setStrkLockVerified(false);
+    setErrorMessage('');
+
     let hashToVerify = effectiveInvoicePaymentHash;
+    let updatedIntention = null;
+
+    // Fetch from Nostr FIRST
+    setSwapStatus('Fetching invoice from Nostr...');
+    try {
+      const targetedEvents = await pool.querySync(RELAYS, {
+        kinds: [NOSTR_SWAP_INVOICE_KIND],
+        '#e': [selectedSwapIntention.id],
+        limit: 10,
+      });
+
+      if (targetedEvents.length > 0) {
+        targetedEvents.sort((a, b) => b.created_at - a.created_at);
+        const latestInvoice = targetedEvents[0];
+        try {
+          const content = JSON.parse(latestInvoice.content || '{}');
+          updatedIntention = {
+            ...selectedSwapIntention,
+            status: 'invoice_ready',
+            paymentRequest: content.paymentRequest || '',
+            paymentHash: content.paymentHash || extractTagValue(latestInvoice.tags, 'h') || '',
+          };
+          if (updatedIntention.paymentHash) {
+            hashToVerify = updatedIntention.paymentHash;
+            setInvoicePaymentRequest(updatedIntention.paymentRequest);
+            setInvoicePaymentHash(updatedIntention.paymentHash);
+            setSelectedSwapIntention(updatedIntention);
+            setStrkLockVerified(true);
+          }
+
+        } catch (e) {
+          console.error('Error parsing targeted invoice event:', e);
+        }
+      }
+    } catch (nostrErr) {
+      console.warn('Nostr targeted sync failed:', nostrErr);
+    }
 
     // Emergency Recovery: If hash is missing, attempt to pull it from a provided Transaction Hash
     if (!hashToVerify && recoveryTxHash) {
       setSwapStatus('Recovering payment hash from Transaction...');
       try {
         const receipt = await publicClient.getTransactionReceipt({ hash: recoveryTxHash });
-        // The SwapInitiated event is usually the first/only log in this contract
-        // We'll look for the 'hashlock' in the logs
         const swapInitiatedTopic = '0x3c6d334ba216fe7a5d16a0ad07a6b134fc9404d2317b59755e9e38b825a3bdbf'; // SwapInitiated
         const log = receipt.logs.find(l => l.topics[0] === swapInitiatedTopic);
 
         if (log) {
-          // hashlock is the first indexed param (topic[1])
           hashToVerify = log.topics[1];
           setInvoicePaymentHash(hashToVerify);
           setSwapStatus('Payment hash recovered from blockchain! Verifying lock status...');
@@ -514,12 +557,11 @@ function AppContent() {
       }
     }
 
-    if (!selectedSwapIntention || !hashToVerify) {
-      setErrorMessage('No payment hash found. Please wait for Nostr update or provide the Lock Transaction Hash below.');
+    if (!hashToVerify) {
+      setErrorMessage('No payment hash found. Please wait for the counterparty to publish the invoice to Nostr.');
       return;
     }
-    setStrkLockVerified(false);
-    setErrorMessage('');
+
     setSwapStatus('Verifying STRK Lock on Starknet...');
 
     try {
@@ -538,8 +580,13 @@ function AppContent() {
         hash = `0x${hash}`;
       }
 
-      // Contract uses: swaps: Map<u256, Swap>
-      const provider = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+      let provider;
+      if (account) {
+        provider = new Contract(AtomicSwapArtifact.abi, contractAddress, account);
+      } else {
+        provider = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+      }
+
       // get_swap returns the Swap struct natively parsed
       const swapData = await provider.get_swap(hash);
 
@@ -551,58 +598,10 @@ function AppContent() {
 
       if (amountBN > 0n && !isClaimed && !isRefunded) {
         setStrkLockVerified(true);
-        setSwapStatus('STRK Lock Verified on-chain! Syncing Nostr for invoice...');
-
-        // Auto-refresh Nostr data to pick up the published invoice
-        try {
-          setSwapStatus('STRK Lock Verified on-chain! Performing targeted Nostr scan for invoice...');
-
-          // Strategy: Query specifically for events related to this intention
-          const targetedEvents = await pool.querySync(RELAYS, {
-            kinds: [NOSTR_SWAP_INVOICE_KIND],
-            '#e': [selectedSwapIntention.id],
-            limit: 10,
-          });
-
-          let updatedIntention = null;
-          if (targetedEvents.length > 0) {
-            // Find latest invoice event
-            targetedEvents.sort((a, b) => b.created_at - a.created_at);
-            const latestInvoice = targetedEvents[0];
-            try {
-              const content = JSON.parse(latestInvoice.content || '{}');
-              updatedIntention = {
-                ...selectedSwapIntention,
-                status: 'invoice_ready',
-                paymentRequest: content.paymentRequest || '',
-                paymentHash: content.paymentHash || extractTagValue(latestInvoice.tags, 'h') || '',
-              };
-            } catch (e) {
-              console.error('Error parsing targeted invoice event:', e);
-            }
-          }
-
-          // Fallback to general fetch if targeted scan found nothing
-          if (!updatedIntention || !updatedIntention.paymentRequest) {
-            const latestIntentions = await fetchSwapIntentions();
-            updatedIntention = latestIntentions.find(i => i.dTag === selectedSwapIntention.dTag);
-          }
-
-          if (updatedIntention) {
-            setSelectedSwapIntention(updatedIntention);
-            if (updatedIntention.paymentRequest) {
-              setInvoicePaymentRequest(updatedIntention.paymentRequest);
-              setInvoicePaymentHash(updatedIntention.paymentHash);
-              setSwapStatus('Lock Verified and Invoice found! You can now pay.');
-            } else {
-              setSwapStatus('Lock Verified on Starknet, but invoice still missing on Nostr. Try Manual Import.');
-            }
-          } else {
-            setSwapStatus('Lock Verified on Starknet. (Nostr data not found yet)');
-          }
-        } catch (nostrErr) {
-          console.warn('Nostr targeted sync failed:', nostrErr);
-          setSwapStatus('Lock Verified on Starknet. (Nostr sync failed)');
+        if (updatedIntention?.paymentRequest || invoicePaymentRequest) {
+          setSwapStatus('Lock Verified on-chain and Invoice is ready! You can now pay.');
+        } else {
+          setSwapStatus('Lock Verified on-chain, but invoice request missing on Nostr. Try Manual Import.');
         }
         startInvoicePolling();
       } else {
@@ -697,9 +696,30 @@ function AppContent() {
       ]);
 
       setClaimTxHash(hash);
-      setSwapStatus('Claim transaction sent! Waiting for confirmation (txn: ' + hash + ')...');
+      // Since starknetReadProvider.waitForTransaction is sometimes stalling,
+      // we'll use a polling loop with account/publicClient for verification.
+      let confirmed = false;
+      for (let i = 0; i < 30; i++) {
+        try {
+          console.log(i)
+          console.log(hash)
+          console.log(publicClient)
+          const receipt = await publicClient.getTransactionReceipt(hash);
+          console.log(receipt)
+          if (receipt.execution_status === 'SUCCEEDED' || receipt.finality_status === 'ACCEPTED_ON_L2') {
+            confirmed = true;
+            break;
+          }
+        } catch (e) {
+          console.log(e)
+          // tx not found yet, wait and retry
+        }
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
 
-      await starknetReadProvider.waitForTransaction(hash);
+      if (!confirmed) {
+        throw new Error('Transaction confirmation timeout or failed.');
+      }
 
       setSwapStatus('STRK Claimed Successfully! Swap Completed.');
       setClaimedSwapDTags(prev => [...prev, selectedSwapIntention.dTag]);
@@ -854,11 +874,7 @@ function AppContent() {
       setErrorMessage('Starknet wallet not connected, or invoice not available yet.');
       return;
     }
-    // TODO: Re-enable chain ID check for Starknet
-    // if (currentChainId !== 97) {
-    //   setErrorMessage('Please connect your wallet to Binance Smart Chain Testnet (Chain ID: 97).');
-    //   return;
-    // }
+
     if (!canLockStrk) {
       setErrorMessage('Based on the selected flow, you are not the STRK locker for this swap.');
       return;
@@ -909,17 +925,40 @@ function AppContent() {
       ]);
 
       setSwapStatus(`Lock transaction submitted (${txHash}). Waiting for confirmation...`);
-      await starknetReadProvider.waitForTransaction(txHash);
-      setSwapStatus('Transaction confirmed. Verifying lock on-chain...');
+      // Since starknetReadProvider.waitForTransaction is sometimes stalling,
+      // we'll use a polling loop with account/publicClient for verification.
+      let confirmed = false;
+      for (let i = 0; i < 30; i++) {
+        try {
+          const receipt = await publicClient.getTransactionReceipt(txHash);
+          if (receipt.execution_status === 'SUCCEEDED' || receipt.finality_status === 'ACCEPTED_ON_L2') {
+            confirmed = true;
+            break;
+          }
+        } catch (e) {
+          // tx not found yet, wait and retry
+        }
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
 
-      const swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+      if (!confirmed) {
+        throw new Error('Transaction confirmation timeout or failed.');
+      }
+      setSwapStatus('Transaction confirmed! Verifying lock on-chain...');
+      /*
+      let swapContract;
+      if (account) {
+        swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, account);
+      } else {
+        swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+      }
       const swapData = await swapContract.get_swap(hashlockU256);
       // value is a u256 struct { low, high } — convert to BigInt before comparing
       const lockedAmount = swapData ? uint256.uint256ToBN(swapData.value) : 0n;
       if (!swapData || lockedAmount === 0n || swapData.refunded || swapData.claimed) {
         throw new Error('Swap lock verification failed after confirmation.');
       }
-
+      */
       setInvoicePaymentHash(normalizedHashlock);
 
       const invoiceToPublish = pendingInvoiceForSelected ? pendingInvoice :

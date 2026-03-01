@@ -32,7 +32,7 @@ const queryClient = new QueryClient(); // Initialize QueryClient
 const myProvider = jsonRpcProvider({
   rpc: (chain) => {
     if (chain.id === sepolia.id) {
-      return { nodeUrl: 'https://starknet-sepolia.drpc.org' };
+      return { nodeUrl: 'https://api.zan.top/public/starknet-sepolia/rpc/v0_10' };
     }
     const rpcs = chain.rpcUrls.public.http;
     const nodeUrl = rpcs[Math.floor(Math.random() * rpcs.length)];
