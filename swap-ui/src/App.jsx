@@ -539,7 +539,7 @@ function AppContent() {
     if (!hashToVerify && recoveryTxHash) {
       setSwapStatus('Recovering payment hash from Transaction...');
       try {
-        const receipt = await publicClient.getTransactionReceipt({ hash: recoveryTxHash });
+        const receipt = await publicClient.getTransactionReceipt(recoveryTxHash);
         const swapInitiatedTopic = '0x3c6d334ba216fe7a5d16a0ad07a6b134fc9404d2317b59755e9e38b825a3bdbf'; // SwapInitiated
         const log = receipt.logs.find(l => l.topics[0] === swapInitiatedTopic);
 
@@ -581,10 +581,15 @@ function AppContent() {
       }
 
       let provider;
+      console.log(AtomicSwapArtifact.abi)
+      console.log(contractAddress)
+      console.log(account)
+      console.log(starknetReadProvider)
+      console.log(Contract)
       if (account) {
-        provider = new Contract(AtomicSwapArtifact.abi, contractAddress, account);
+        provider = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: account });
       } else {
-        provider = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+        provider = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: starknetReadProvider });
       }
 
       // get_swap returns the Swap struct natively parsed
@@ -880,6 +885,11 @@ function AppContent() {
       return;
     }
 
+    if (selectedSwapIntention?.status === 'invoice_ready' || selectedSwapIntention?.status === 'locked') {
+      setErrorMessage('STRK has already been locked for this intention and the invoice has been published. Cannot lock again.');
+      return;
+    }
+
     setSwapStatus('Locking STRK on Starknet...');
     setErrorMessage('');
 
@@ -945,12 +955,12 @@ function AppContent() {
         throw new Error('Transaction confirmation timeout or failed.');
       }
       setSwapStatus('Transaction confirmed! Verifying lock on-chain...');
-      /*
+
       let swapContract;
       if (account) {
-        swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, account);
+        swapContract = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: account });
       } else {
-        swapContract = new Contract(AtomicSwapArtifact.abi, contractAddress, starknetReadProvider);
+        swapContract = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: starknetReadProvider });
       }
       const swapData = await swapContract.get_swap(hashlockU256);
       // value is a u256 struct { low, high } — convert to BigInt before comparing
@@ -958,7 +968,7 @@ function AppContent() {
       if (!swapData || lockedAmount === 0n || swapData.refunded || swapData.claimed) {
         throw new Error('Swap lock verification failed after confirmation.');
       }
-      */
+
       setInvoicePaymentHash(normalizedHashlock);
 
       const invoiceToPublish = pendingInvoiceForSelected ? pendingInvoice :
