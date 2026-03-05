@@ -25,6 +25,11 @@ const NostrContext = createContext(null);
 
 const toHex = (bytes) => Buffer.from(bytes).toString('hex');
 const extractTagValue = (tags, key) => tags.find((tag) => tag[0] === key)?.[1];
+const normalizeWantedAsset = (value) => {
+  if (!value || typeof value !== 'string') return 'STRK';
+  const normalized = value.trim().toUpperCase();
+  return normalized === 'TAPROOT_STRK' ? 'TAPROOT_STRK' : 'STRK';
+};
 const extractDTagFromARef = (aRef) => {
   if (!aRef) return null;
   const parts = aRef.split(':');
@@ -79,7 +84,7 @@ export const NostrProvider = ({ children }) => {
   const publishSwapIntention = useCallback(async (intentionDetails, starknetAddress) => {
     if (!nostrPubkey || !privKey) throw new Error('Nostr identity not established or private key unavailable.');
 
-    const wantedAsset = intentionDetails.wantedAsset || 'STRK';
+    const wantedAsset = normalizeWantedAsset(intentionDetails.wantedAsset);
     if (!['STRK', 'TAPROOT_STRK'].includes(wantedAsset)) {
       throw new Error('Invalid wantedAsset. Use STRK or TAPROOT_STRK.');
     }
@@ -163,7 +168,7 @@ export const NostrProvider = ({ children }) => {
     const tags = [
       ['t', NOSTR_SWAP_TOPIC],
       ['s', 'invoice_ready'],
-      ['w', intention.wantedAsset || 'STRK'],
+      ['w', normalizeWantedAsset(intention.wantedAsset)],
       ['a', aRef],
       ['e', intention.id],
       ['d', dTag],
@@ -212,7 +217,7 @@ export const NostrProvider = ({ children }) => {
     const tags = [
       ['t', NOSTR_SWAP_TOPIC],
       ['s', 'accepted'],
-      ['w', intention.wantedAsset || 'STRK'],
+      ['w', normalizeWantedAsset(intention.wantedAsset)],
       ['a', aRef],
       ['e', intention.id],
       ['d', dTag],
@@ -273,7 +278,7 @@ export const NostrProvider = ({ children }) => {
               pubkey: event.pubkey,
               posterPubkey: contentData.posterPubkey || event.pubkey,
               status: contentData.status || extractTagValue(event.tags, 's') || 'open',
-              wantedAsset: contentData.wantedAsset || extractTagValue(event.tags, 'w') || 'STRK',
+              wantedAsset: normalizeWantedAsset(contentData.wantedAsset || extractTagValue(event.tags, 'w')),
               amountSTRK: contentData.amountSTRK || '',
               amountSats: contentData.amountSats || '',
               paymentRequest: contentData.paymentRequest || '',

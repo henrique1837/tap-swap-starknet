@@ -113,6 +113,18 @@ const normalizeStarknetTxHash = (value) => {
   return '';
 };
 
+const asBoolFlag = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'bigint') return value !== 0n;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized || normalized === '0' || normalized === '0x0' || normalized === 'false') return false;
+    return true;
+  }
+  return Boolean(value);
+};
+
 
 
 // Taproot Assets Configuration
@@ -1113,10 +1125,30 @@ function AppContent() {
       } else {
         swapContract = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: starknetReadProvider });
       }
-      const swapData = await swapContract.get_swap(hashlockU256);
+      // Different providers can expect/return slightly different key/flag shapes.
+      // Try both hashlock representations and normalize boolean-like flags.
+      let swapData = null;
+      for (const lookupKey of [normalizedHashlock, hashlockU256]) {
+        try {
+          const candidate = await swapContract.get_swap(lookupKey);
+          const candidateAmount = candidate?.value ? uint256.uint256ToBN(candidate.value) : 0n;
+          if (candidateAmount > 0n) {
+            swapData = candidate;
+            break;
+          }
+          // Keep candidate as fallback if nothing better is found.
+          if (!swapData) swapData = candidate;
+        } catch {
+          // Try next lookup key format.
+        }
+      }
+
       // value is a u256 struct { low, high } — convert to BigInt before comparing
-      const lockedAmount = swapData ? uint256.uint256ToBN(swapData.value) : 0n;
-      if (!swapData || lockedAmount === 0n || swapData.refunded || swapData.claimed) {
+      const lockedAmount = swapData?.value ? uint256.uint256ToBN(swapData.value) : 0n;
+      const isRefunded = asBoolFlag(swapData?.refunded);
+      const isClaimed = asBoolFlag(swapData?.claimed);
+
+      if (!swapData || lockedAmount === 0n || isRefunded || isClaimed) {
         throw new Error('Swap lock verification failed after confirmation.');
       }
 
