@@ -15,7 +15,6 @@ import NodeInfo from './components/NodeInfo';
 import TaprootAssetSelector from './components/TaprootAssetSelector';
 import CreateSwapIntention from './components/CreateSwapIntention';
 import SwapIntentionsList from './components/SwapIntentionsList';
-import ClaimableIntentionsList from './components/ClaimableIntentionsList';
 import Header from './components/Header';
 import Modal from './components/Modal';
 import { decode } from 'light-bolt11-decoder';
@@ -131,6 +130,26 @@ const asBoolFlag = (value) => {
   return Boolean(value);
 };
 
+const formatUnixTime = (unixSeconds) => {
+  if (!unixSeconds) return 'Not available';
+  const ts = Number(unixSeconds);
+  if (!Number.isFinite(ts) || ts <= 0) return 'Not available';
+  return new Date(ts * 1000).toLocaleString();
+};
+
+const formatRemainingTime = (unixSeconds) => {
+  if (!unixSeconds) return 'Not available';
+  const ts = Number(unixSeconds);
+  if (!Number.isFinite(ts) || ts <= 0) return 'Not available';
+  const secondsLeft = ts - Math.floor(Date.now() / 1000);
+  if (secondsLeft <= 0) return 'Expired';
+  const minutes = Math.floor(secondsLeft / 60);
+  if (minutes < 60) return `${minutes}m remaining`;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return `${hours}h ${remMinutes}m remaining`;
+};
+
 
 
 // Taproot Assets Configuration
@@ -206,7 +225,7 @@ function AppContent() {
   const [connectionSuccess, setConnectionSuccess] = useState(false);
 
   const [activeTab, setActiveTab] = useState('create');
-  const [claimedSwapDTags, setClaimedSwapDTags] = useState([]);
+  const [finalizeView, setFinalizeView] = useState('select');
 
   // Modal states
   const [isNostrModalOpen, setIsNostrModalOpen] = useState(false);
@@ -229,6 +248,9 @@ function AppContent() {
   const [recoveryTxHash, setRecoveryTxHash] = useState('');
   const [walletError, setWalletError] = useState('');
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [finalizeIntentions, setFinalizeIntentions] = useState([]);
+  const [claimedIntentions, setClaimedIntentions] = useState([]);
+  const [isLoadingFinalizeIntentions, setIsLoadingFinalizeIntentions] = useState(false);
   const isWalletConnected = Boolean(isConnected && address);
   const walletNetwork = !isWalletConnected
     ? ''
@@ -449,6 +471,10 @@ function AppContent() {
       invoicePaymentRequest ||
       (pendingInvoiceForSelected ? pendingInvoice?.paymentRequest : '');
   }, [sanitizedManualInvoice, selectedSwapIntention, invoicePaymentRequest, pendingInvoiceForSelected, pendingInvoice]);
+  const isInvoiceReadyState = selectedSwapIntention?.status === 'invoice_ready';
+  const selectedLockTxHash = selectedSwapIntention?.lockTxHash || '';
+  const selectedTimelock = selectedSwapIntention?.timelock || null;
+  const selectedInvoicePublishedAt = selectedSwapIntention?.invoicePublishedAt || null;
 
   const canGenerateInvoice = Boolean(selectedSwapIntention) && isSelectedAccepted && isPublisherRoleMatch;
   const isLockAlreadyDone = Boolean(
@@ -922,7 +948,6 @@ function AppContent() {
 
       setSelectedSwapIntention((prev) => (prev ? { ...prev, status: 'claimed' } : prev));
       setSwapStatus('STRK claimed successfully and status published to Nostr.');
-      setClaimedSwapDTags(prev => [...prev, selectedSwapIntention.dTag]);
     } catch (err) {
       console.error('Error claiming STRK:', err);
       setErrorMessage(`Failed to claim STRK: ${err.message || String(err)}`);
@@ -1034,7 +1059,9 @@ function AppContent() {
     }
 
     setErrorMessage('');
-    setActiveTab('execute');
+    // Keep user in the new Finalize flow (legacy "execute" tab no longer exists).
+    setActiveTab('finalize');
+    setFinalizeView('flow');
   };
 
   const handlePublishSwapIntention = async () => {
@@ -1186,10 +1213,17 @@ function AppContent() {
 
       setInvoicePaymentHash(normalizedHashlock);
 
-      const invoiceToPublish = pendingInvoiceForSelected ? pendingInvoice :
-        (manualInvoice && manualInvoiceHash === effectiveInvoicePaymentHash ? {
+      const invoiceToPublish = pendingInvoiceForSelected
+        ? {
+          ...pendingInvoice,
+          lockTxHash: txHash,
+          timelock: strkTimelock,
+        }
+        : (manualInvoice && manualInvoiceHash === effectiveInvoicePaymentHash ? {
           paymentRequest: manualInvoice,
-          paymentHash: normalizedHashlock
+          paymentHash: normalizedHashlock,
+          lockTxHash: txHash,
+          timelock: strkTimelock,
         } : null);
 
       if (invoiceToPublish && selectedSwapIntention) {
@@ -1203,13 +1237,15 @@ function AppContent() {
             status: 'invoice_ready',
             paymentRequest: invoiceToPublish.paymentRequest,
             paymentHash: invoiceToPublish.paymentHash,
+            lockTxHash: txHash,
+            timelock: strkTimelock,
           };
         });
 
         setSwapStatus('STRK locked and invoice published. Waiting for invoice payment.');
         setPendingInvoice(null);
       } else {
-        setSelectedSwapIntention((prev) => (prev ? { ...prev, status: 'locked', paymentHash: normalizedHashlock } : prev));
+        setSelectedSwapIntention((prev) => (prev ? { ...prev, status: 'locked', paymentHash: normalizedHashlock, lockTxHash: txHash, timelock: strkTimelock } : prev));
         setSwapStatus('STRK locked on Starknet. Waiting for invoice payment.');
       }
 
@@ -1300,6 +1336,37 @@ function AppContent() {
       setPendingInvoice(null);
     }
   }, [selectedSwapIntention, pendingInvoice]);
+
+  const refreshFinalizeLists = useCallback(async () => {
+    setIsLoadingFinalizeIntentions(true);
+    try {
+      const intentions = await fetchSwapIntentions();
+      const mine = intentions.filter((item) => {
+        if (!nostrPubkey) return false;
+        const poster = item.posterPubkey || item.pubkey;
+        return poster === nostrPubkey || item.acceptedByPubkey === nostrPubkey;
+      });
+
+      const active = mine.filter((item) => ['accepted', 'invoice_ready', 'locked'].includes(item.status));
+      const claimed = nostrPubkey
+        ? mine.filter((item) => item.status === 'claimed')
+        : intentions.filter((item) => item.status === 'claimed');
+
+      setFinalizeIntentions(active);
+      setClaimedIntentions(claimed);
+    } catch (err) {
+      console.error('Error loading finalize lists:', err);
+      setErrorMessage(`Failed to load finalize lists: ${err.message || String(err)}`);
+    } finally {
+      setIsLoadingFinalizeIntentions(false);
+    }
+  }, [fetchSwapIntentions, nostrPubkey]);
+
+  useEffect(() => {
+    if (activeTab === 'finalize' || activeTab === 'claimed') {
+      refreshFinalizeLists();
+    }
+  }, [activeTab, refreshFinalizeLists]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
@@ -1394,13 +1461,13 @@ function AppContent() {
                 <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
                 Market
               </button>
-              <button className={tabClass('execute')} onClick={() => setActiveTab('execute')}>
+              <button className={tabClass('finalize')} onClick={() => setActiveTab('finalize')}>
                 <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
-                Lock
+                Finalize
               </button>
-              <button className={tabClass('claim')} onClick={() => setActiveTab('claim')}>
+              <button className={tabClass('claimed')} onClick={() => setActiveTab('claimed')}>
                 <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
-                Claim
+                Claimed
               </button>
             </div>
           </div>
@@ -1433,25 +1500,6 @@ function AppContent() {
 
           {activeTab === 'market' && (
             <SwapIntentionsList
-              setSelectedSwapIntention={(intention) => {
-                setSelectedSwapIntention(intention);
-                // Sync invoice state if already present on Nostr
-                if (intention.paymentRequest) setInvoicePaymentRequest(intention.paymentRequest);
-                if (intention.paymentHash) setInvoicePaymentHash(intention.paymentHash);
-
-                // Smart Tab Switching: Locker role goes to Execute, others to Claim
-                const posterPubkey = intention.posterPubkey || intention.pubkey;
-                const isPoster = nostrPubkey === posterPubkey;
-                const isAccepter = intention.acceptedByPubkey === nostrPubkey;
-                const wantedAsset = normalizeWantedAsset(intention.wantedAsset);
-                const roleForLocker = wantedAsset === 'STRK' ? 'accepter' : 'poster';
-                const isLocker = (roleForLocker === 'poster' && isPoster) || (roleForLocker === 'accepter' && isAccepter);
-
-                setActiveTab(isLocker ? 'execute' : 'claim');
-              }}
-              selectedSwapIntention={selectedSwapIntention}
-              setInvoicePaymentRequest={setInvoicePaymentRequest}
-              setInvoicePaymentHash={setInvoicePaymentHash}
               setErrorMessage={setErrorMessage}
               setSwapStatus={setSwapStatus}
               starknetAddress={activeStarknetAddress}
@@ -1459,10 +1507,104 @@ function AppContent() {
             />
           )}
 
-          {activeTab === 'execute' && (
+          {activeTab === 'finalize' && (
             <>
-              {selectedSwapIntention ? (
+              <div className="w-full max-w-2xl mt-4">
+                <div className="flex p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/50">
+                  <button
+                    onClick={() => setFinalizeView('select')}
+                    className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${finalizeView === 'select'
+                      ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                      }`}
+                  >
+                    Select
+                  </button>
+                  <button
+                    onClick={() => setFinalizeView('flow')}
+                    className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${finalizeView === 'flow'
+                      ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                      }`}
+                  >
+                    Lock/Claim
+                  </button>
+                </div>
+              </div>
+
+              {finalizeView === 'select' && (
+              <div className="bg-white/80 backdrop-blur-lg p-6 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-800">My Finalization Queue</h3>
+                    <p className="text-sm text-slate-500">Orders you created or accepted. Continue based on your role.</p>
+                  </div>
+                  <button
+                    onClick={refreshFinalizeLists}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    disabled={isLoadingFinalizeIntentions}
+                  >
+                    {isLoadingFinalizeIntentions ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {!nostrPubkey ? (
+                  <p className="text-sm text-slate-500">Connect LNC to load your finalize queue.</p>
+                ) : finalizeIntentions.length === 0 ? (
+                  <p className="text-sm text-slate-500">No active intentions to finalize.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {finalizeIntentions.map((item) => {
+                      const isSelected = selectedSwapIntention?.dTag === item.dTag;
+                      return (
+                        <button
+                          key={item.dTag || item.id}
+                          onClick={() => {
+                            setSelectedSwapIntention(item);
+                            if (item.paymentRequest) setInvoicePaymentRequest(item.paymentRequest);
+                            if (item.paymentHash) setInvoicePaymentHash(item.paymentHash);
+                            setFinalizeView('flow');
+                          }}
+                          className={`w-full text-left p-4 rounded-2xl border transition-all ${isSelected
+                            ? 'border-indigo-400 bg-indigo-50/60'
+                            : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-bold text-slate-800">{(item.dTag || item.id || '').slice(0, 12)}...</p>
+                            <span className="text-[10px] uppercase font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600">{item.status}</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">Wanted: {item.wantedAsset || 'STRK'} • Amount: {item.amountSTRK} STRK</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              )}
+
+              {finalizeView === 'flow' && !selectedSwapIntention && (
+                <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50 text-center">
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">No intention selected</h3>
+                  <p className="text-sm text-slate-500 mb-4">Select an intention first to continue with lock/claim.</p>
+                  <button
+                    onClick={() => setFinalizeView('select')}
+                    className="px-4 py-2 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    Go to Select
+                  </button>
+                </div>
+              )}
+
+              {finalizeView === 'flow' && selectedSwapIntention && (
                 <>
+                  <div className="w-full max-w-2xl">
+                    <button
+                      onClick={() => setFinalizeView('select')}
+                      className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                    >
+                      ← Back to Select
+                    </button>
+                  </div>
                   <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50">
                     <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
                       <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
@@ -1520,129 +1662,191 @@ function AppContent() {
                   {/* LOCKER ROLE UI */}
                   {isLockerRoleMatch ? (
                     <>
-                      <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-white/50">
-                        <div className="flex items-center justify-between mb-6">
-                          <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center">⚡</span>
-                            Choose Invoice Method
-                          </h3>
-                        </div>
-
-                        <div className="flex p-1.5 bg-slate-100/80 rounded-2xl mb-8 border border-slate-200/50">
-                          <button
-                            onClick={() => setInvoiceMethod('lnc')}
-                            disabled={!lncIsConnected}
-                            className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${invoiceMethod === 'lnc'
-                              ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
-                              : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                              } ${!lncIsConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            LNC Node (Auto)
-                          </button>
-                          <button
-                            onClick={() => setInvoiceMethod('manual')}
-                            className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${invoiceMethod === 'manual'
-                              ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
-                              : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                              }`}
-                          >
-                            Manual (Paste)
-                          </button>
-                        </div>
-
-                        {invoiceMethod === 'lnc' ? (
-                          <div className="space-y-5">
-                            <button
-                              onClick={handleGenerateInvoice}
-                              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-2xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
-                              disabled={!canGenerateInvoice}
-                            >
-                              <span>Generate Lightning/Taproot Invoice</span>
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            </button>
-                            {!!generateInvoiceDisabledReason && (
-                              <p className="text-sm text-slate-500 text-center font-medium bg-slate-50 py-2 rounded-xl">{generateInvoiceDisabledReason}</p>
-                            )}
-
-                            {!selectedAsset && isTapdAvailable && (
-                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center gap-2 text-amber-700 text-sm font-medium">
-                                <span>⚠️</span> Please select a Taproot Asset above before generating invoice.
-                              </div>
-                            )}
-
-                            {!isTapdChannelsAvailable && isTapdAvailable && (
-                              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
-                                <p className="text-sm text-amber-800 flex items-start gap-2">
-                                  <span>⚠️</span>
-                                  <span><span className="font-bold">Tap Channels service unavailable:</span> falling back to regular Lightning invoice.</span>
-                                </p>
-                              </div>
-                            )}
-
-                            {!isTapdAvailable && (
-                              <p className="text-sm text-red-500 text-center font-medium bg-red-50 py-2 rounded-xl border border-red-100">Taproot Assets daemon not available.</p>
-                            )}
-
-                            {pendingInvoiceForSelected && (
-                              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-center gap-2 text-blue-700 text-sm font-medium">
-                                <span>ℹ️</span> Invoice is local. It will be published after STRK lock.
-                              </div>
-                            )}
-
-                            {effectiveInvoicePaymentRequest && !manualInvoice && (
-                              <div className="mt-6 p-6 bg-emerald-50/50 rounded-2xl border border-emerald-100 shadow-sm">
-                                <p className="font-bold text-emerald-800 text-sm mb-4 flex items-center gap-2">
-                                  <span className="bg-emerald-200 p-1 rounded-full text-emerald-700">✓</span> Invoice Ready
-                                </p>
-                                <InvoiceDecoder
-                                  key={`lnc-${effectiveInvoicePaymentRequest}`}
-                                  invoice={effectiveInvoicePaymentRequest}
-                                  title="LNC Invoice Details"
-                                  lncClient={lncClient}
-                                  assetId={FORCED_TAPROOT_ASSET_ID}
-                                />
-                              </div>
-                            )}
+                      {isInvoiceReadyState ? (
+                        <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-emerald-200/80">
+                          <div className="flex items-center justify-between mb-6 border-b border-emerald-100 pb-4">
+                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                              <span className="bg-emerald-100 text-emerald-700 w-8 h-8 rounded-lg flex items-center justify-center">✓</span>
+                              Invoice Published
+                            </h3>
+                            <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Invoice Ready</span>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                              <p className="text-sm text-slate-600 font-medium mb-3">
-                                Paste an invoice from Polar or another wallet to continue.
+
+                          <p className="text-sm text-slate-600 mb-5">
+                            This swap already has a published invoice. Invoice generation and manual paste are locked to prevent overwriting the current flow.
+                          </p>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Lock Transaction</p>
+                              <p className="text-xs font-mono text-slate-700 break-all">
+                                {selectedLockTxHash || 'Not available on this intention.'}
                               </p>
-                              <textarea
-                                value={manualInvoice}
-                                onChange={(e) => setManualInvoice(e.target.value)}
-                                placeholder="lnbc... or lnbcrt..."
-                                className="w-full p-4 border border-slate-300 rounded-xl font-mono text-sm resize-none min-h-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-inner transition-colors"
-                              />
                             </div>
-                            {manualInvoice && (
-                              <div className="flex justify-between items-center px-2">
-                                <button
-                                  onClick={() => setManualInvoice('')}
-                                  className="text-sm text-red-500 hover:text-red-700 font-bold transition"
-                                >
-                                  Clear Invoice
-                                </button>
-                                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">Detected {manualInvoice.length} chars</span>
-                              </div>
-                            )}
+                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Hashlock (Payment Hash)</p>
+                              <p className="text-xs font-mono text-slate-700 break-all">
+                                {effectiveInvoicePaymentHash || 'Not available'}
+                              </p>
+                            </div>
+                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">STRK Timelock</p>
+                              <p className="text-sm font-semibold text-slate-800">
+                                {selectedTimelock ? formatUnixTime(selectedTimelock) : 'Not available'}
+                              </p>
+                              {selectedTimelock && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Unix {selectedTimelock} • {formatRemainingTime(selectedTimelock)}
+                                </p>
+                              )}
+                            </div>
+                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Invoice Published At</p>
+                              <p className="text-sm font-semibold text-slate-800">
+                                {selectedInvoicePublishedAt ? formatUnixTime(selectedInvoicePublishedAt) : 'Not available'}
+                              </p>
+                            </div>
+                          </div>
 
-                            {manualInvoice && (
-                              <div className="mt-6 p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm">
-                                <InvoiceDecoder
-                                  key={`manual-${manualInvoice}`}
-                                  invoice={manualInvoice}
-                                  title="Pasted Invoice Details"
-                                  lncClient={lncClient}
-                                  assetId={FORCED_TAPROOT_ASSET_ID}
+                          {effectiveInvoicePaymentRequest ? (
+                            <InvoiceDecoder
+                              key={`invoice-ready-${effectiveInvoicePaymentRequest}`}
+                              invoice={effectiveInvoicePaymentRequest}
+                              title="Published Invoice (Taproot/Lightning)"
+                              lncClient={lncClient}
+                              assetId={FORCED_TAPROOT_ASSET_ID}
+                            />
+                          ) : (
+                            <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-medium">
+                              Invoice data was published without a readable payment request.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-white/50">
+                          <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                              <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center">⚡</span>
+                              Choose Invoice Method
+                            </h3>
+                          </div>
+
+                          <div className="flex p-1.5 bg-slate-100/80 rounded-2xl mb-8 border border-slate-200/50">
+                            <button
+                              onClick={() => setInvoiceMethod('lnc')}
+                              disabled={!lncIsConnected}
+                              className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${invoiceMethod === 'lnc'
+                                ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                                } ${!lncIsConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                              LNC Node (Auto)
+                            </button>
+                            <button
+                              onClick={() => setInvoiceMethod('manual')}
+                              className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${invoiceMethod === 'manual'
+                                ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                                }`}
+                            >
+                              Manual (Paste)
+                            </button>
+                          </div>
+
+                          {invoiceMethod === 'lnc' ? (
+                            <div className="space-y-5">
+                              <button
+                                onClick={handleGenerateInvoice}
+                                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-2xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
+                                disabled={!canGenerateInvoice}
+                              >
+                                <span>Generate Lightning/Taproot Invoice</span>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                              </button>
+                              {!!generateInvoiceDisabledReason && (
+                                <p className="text-sm text-slate-500 text-center font-medium bg-slate-50 py-2 rounded-xl">{generateInvoiceDisabledReason}</p>
+                              )}
+
+                              {!selectedAsset && isTapdAvailable && (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center gap-2 text-amber-700 text-sm font-medium">
+                                  <span>⚠️</span> Please select a Taproot Asset above before generating invoice.
+                                </div>
+                              )}
+
+                              {!isTapdChannelsAvailable && isTapdAvailable && (
+                                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                                  <p className="text-sm text-amber-800 flex items-start gap-2">
+                                    <span>⚠️</span>
+                                    <span><span className="font-bold">Tap Channels service unavailable:</span> falling back to regular Lightning invoice.</span>
+                                  </p>
+                                </div>
+                              )}
+
+                              {!isTapdAvailable && (
+                                <p className="text-sm text-red-500 text-center font-medium bg-red-50 py-2 rounded-xl border border-red-100">Taproot Assets daemon not available.</p>
+                              )}
+
+                              {pendingInvoiceForSelected && (
+                                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-center gap-2 text-blue-700 text-sm font-medium">
+                                  <span>ℹ️</span> Invoice is local. It will be published after STRK lock.
+                                </div>
+                              )}
+
+                              {effectiveInvoicePaymentRequest && !manualInvoice && (
+                                <div className="mt-6 p-6 bg-emerald-50/50 rounded-2xl border border-emerald-100 shadow-sm">
+                                  <p className="font-bold text-emerald-800 text-sm mb-4 flex items-center gap-2">
+                                    <span className="bg-emerald-200 p-1 rounded-full text-emerald-700">✓</span> Invoice Ready
+                                  </p>
+                                  <InvoiceDecoder
+                                    key={`lnc-${effectiveInvoicePaymentRequest}`}
+                                    invoice={effectiveInvoicePaymentRequest}
+                                    title="LNC Invoice Details"
+                                    lncClient={lncClient}
+                                    assetId={FORCED_TAPROOT_ASSET_ID}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                <p className="text-sm text-slate-600 font-medium mb-3">
+                                  Paste an invoice from Polar or another wallet to continue.
+                                </p>
+                                <textarea
+                                  value={manualInvoice}
+                                  onChange={(e) => setManualInvoice(e.target.value)}
+                                  placeholder="lnbc... or lnbcrt..."
+                                  className="w-full p-4 border border-slate-300 rounded-xl font-mono text-sm resize-none min-h-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-inner transition-colors"
                                 />
                               </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                              {manualInvoice && (
+                                <div className="flex justify-between items-center px-2">
+                                  <button
+                                    onClick={() => setManualInvoice('')}
+                                    className="text-sm text-red-500 hover:text-red-700 font-bold transition"
+                                  >
+                                    Clear Invoice
+                                  </button>
+                                  <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">Detected {manualInvoice.length} chars</span>
+                                </div>
+                              )}
+
+                              {manualInvoice && (
+                                <div className="mt-6 p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm">
+                                  <InvoiceDecoder
+                                    key={`manual-${manualInvoice}`}
+                                    invoice={manualInvoice}
+                                    title="Pasted Invoice Details"
+                                    lncClient={lncClient}
+                                    assetId={FORCED_TAPROOT_ASSET_ID}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className={`bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border-2 transition-all duration-500 ${effectiveInvoicePaymentHash ? 'border-amber-200/50 opacity-100 hover:shadow-2xl hover:border-amber-300/50' : 'border-slate-100/50 opacity-60 grayscale-[0.2]'}`}>
                         <div className="flex items-center gap-3 mb-4">
@@ -1698,31 +1902,12 @@ function AppContent() {
 
 
                 </>
-              ) : (
-                <div className="bg-white/80 backdrop-blur-lg p-10 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50 text-center flex flex-col items-center justify-center">
-                  <div className="bg-slate-100/80 p-6 rounded-full mb-4 inline-block">
-                    <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-700 mb-2">No Swap Selected</h3>
-                  <p className="text-slate-500 font-medium">Head over to the <button onClick={() => setActiveTab('market')} className="text-indigo-600 hover:text-indigo-800 underline underline-offset-2">Market tab</button> and select or accept an intention to continue.</p>
-                </div>
               )}
             </>
           )}
 
-          {activeTab === 'claim' && (
+          {activeTab === 'finalize' && !isLockerRoleMatch && (
             <>
-              <ClaimableIntentionsList
-                setSelectedSwapIntention={setSelectedSwapIntention}
-                selectedSwapIntention={selectedSwapIntention}
-                setInvoicePaymentRequest={setInvoicePaymentRequest}
-                setInvoicePaymentHash={setInvoicePaymentHash}
-                setErrorMessage={setErrorMessage}
-                setSwapStatus={setSwapStatus}
-                nostrPubkey={nostrPubkey}
-                claimedSwapDTags={claimedSwapDTags}
-              />
-
               {selectedSwapIntention && (
                 <>
                   {isClaimerRoleMatch ? (
@@ -1953,6 +2138,44 @@ function AppContent() {
                 </>
               )}
             </>
+          )}
+
+          {activeTab === 'claimed' && (
+            <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-6xl mt-4 border border-white/50">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800">Claimed Intentions</h2>
+                  <p className="text-sm text-slate-500">
+                    {nostrPubkey ? 'Claimed swaps where you participated.' : 'All claimed swaps tracked from Nostr.'}
+                  </p>
+                </div>
+                <button
+                  onClick={refreshFinalizeLists}
+                  className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  disabled={isLoadingFinalizeIntentions}
+                >
+                  {isLoadingFinalizeIntentions ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+
+              {claimedIntentions.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  {nostrPubkey ? 'No claimed intentions found for your swaps.' : 'No claimed intentions found.'}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {claimedIntentions.map((item) => (
+                    <div key={item.dTag || item.id} className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/60">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-bold text-emerald-900 truncate">{(item.dTag || item.id || '').slice(0, 24)}...</p>
+                        <span className="text-[10px] uppercase font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">claimed</span>
+                      </div>
+                      <p className="text-xs text-emerald-800/80 mt-1">Wanted: {item.wantedAsset || 'STRK'} • Amount: {item.amountSTRK} STRK • Sats: {item.amountSats}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           <div className="w-full max-w-4xl mt-12 mb-4">

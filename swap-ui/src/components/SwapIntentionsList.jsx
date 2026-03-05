@@ -9,14 +9,11 @@ const statusClass = (status) => {
   return 'text-gray-500';
 };
 
-const SimpleSwapIntentionCard = ({ intention, onSelect, isSelected, onAccept, canAccept }) => {
+const SimpleSwapIntentionCard = ({ intention, onAccept, canAccept }) => {
   const npub = nip19.npubEncode(intention.pubkey || intention.posterPubkey);
 
   return (
-    <div
-      className={`bg-white/60 backdrop-blur-md rounded-2xl p-5 transition-all duration-300 border ${isSelected ? 'border-indigo-500 shadow-lg ring-2 ring-indigo-200/50 scale-[1.02]' : 'border-white hover:border-indigo-200 hover:shadow-md'
-        }`}
-    >
+    <div className="bg-white/60 backdrop-blur-md rounded-2xl p-5 transition-all duration-300 border border-white hover:border-indigo-200 hover:shadow-md">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shadow-inner">
@@ -66,20 +63,10 @@ const SimpleSwapIntentionCard = ({ intention, onSelect, isSelected, onAccept, ca
       </div>
 
       <div className="flex gap-3 pt-2">
-        <button
-          onClick={() => onSelect(intention)}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-bold transition-all ${isSelected
-            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-            : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}
-          `}
-        >
-          {isSelected ? '✓ Selected' : 'Select'}
-        </button>
-
         {canAccept && intention.status === 'open' && (
           <button
             onClick={() => onAccept(intention)}
-            className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-sm font-bold shadow-md hover:shadow-lg transition-all"
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-sm font-bold shadow-md hover:shadow-lg transition-all"
           >
             Accept Swap
           </button>
@@ -90,10 +77,6 @@ const SimpleSwapIntentionCard = ({ intention, onSelect, isSelected, onAccept, ca
 };
 
 function SwapIntentionsList({
-  setSelectedSwapIntention,
-  selectedSwapIntention,
-  setInvoicePaymentRequest,
-  setInvoicePaymentHash,
   setErrorMessage,
   setSwapStatus,
   starknetAddress,
@@ -101,7 +84,6 @@ function SwapIntentionsList({
 }) {
   const { nostrPubkey, fetchSwapIntentions, acceptSwapIntention } = useNostr();
   const [swapIntentions, setSwapIntentions] = useState([]);
-  const [finalizedIntentions, setFinalizedIntentions] = useState([]);
   const [isFetchingIntentions, setIsFetchingIntentions] = useState(false);
 
   const fetchAndSetSwapIntentions = useCallback(async () => {
@@ -110,54 +92,20 @@ function SwapIntentionsList({
     try {
       const fetchedIntentions = await fetchSwapIntentions();
 
-      const filteredActive = [];
-      const filteredFinalized = [];
-
-      fetchedIntentions.forEach((intention) => {
-        // Separate finalized vs active
-        if (intention.status === 'claimed' || intention.status === 'refunded') {
-          // Finalized orders are visible to everyone
-          filteredFinalized.push(intention);
-        } else {
-          // 1. Fully open intentions should be visible to everyone
-          if (intention.status === 'open') {
-            filteredActive.push(intention);
-          } else if (nostrPubkey) {
-            // 2. If it is NOT open (accepted, invoice_ready, locked), 
-            // it should only be visible to the original poster or the accepter.
-            const posterPubkey = intention.posterPubkey || intention.pubkey;
-            const isPoster = nostrPubkey === posterPubkey;
-            const isAccepter = intention.acceptedByPubkey === nostrPubkey;
-            if (isPoster || isAccepter) {
-              filteredActive.push(intention);
-            }
-          }
-        }
-      });
-
-      setSwapIntentions(filteredActive);
-      setFinalizedIntentions(filteredFinalized);
+      // Marketplace should only show intentions that are not accepted yet.
+      const openIntentions = fetchedIntentions.filter((intention) => intention.status === 'open');
+      setSwapIntentions(openIntentions);
     } catch (err) {
       console.error('Error fetching swap intentions:', err);
       setErrorMessage(`Failed to load swap intentions: ${err.message || String(err)}`);
     } finally {
       setIsFetchingIntentions(false);
     }
-  }, [fetchSwapIntentions, nostrPubkey, setErrorMessage]);
+  }, [fetchSwapIntentions, setErrorMessage]);
 
   useEffect(() => {
     fetchAndSetSwapIntentions();
   }, [fetchAndSetSwapIntentions]);
-
-  const handleSelectIntention = useCallback((intention) => {
-    setSelectedSwapIntention(intention);
-    // Sticky updates: Only overwrite if new data is present. 
-    // This prevents stale Nostr data from clearing locally generated invoices.
-    if (intention.paymentRequest) setInvoicePaymentRequest(intention.paymentRequest);
-    if (intention.paymentHash) setInvoicePaymentHash(intention.paymentHash);
-    setErrorMessage('');
-    setSwapStatus(`Selected intention from ${nip19.npubEncode(intention.pubkey || intention.posterPubkey).substring(0, 10)}...`);
-  }, [setSelectedSwapIntention, setInvoicePaymentRequest, setInvoicePaymentHash, setErrorMessage, setSwapStatus]);
 
   const handleAcceptIntention = useCallback(async (intention) => {
     try {
@@ -180,7 +128,7 @@ function SwapIntentionsList({
         </div>
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Marketplace</h2>
-          <p className="text-sm text-slate-500 font-medium">Browse swap intentions or select accepted ones.</p>
+          <p className="text-sm text-slate-500 font-medium">Browse open swap intentions ready for acceptance.</p>
         </div>
       </div>
 
@@ -201,7 +149,7 @@ function SwapIntentionsList({
             <div className="text-3xl">👋</div>
             <div>
               <p className="font-bold text-indigo-900">Exploring as Guest</p>
-              <p className="text-xs text-indigo-700 mt-1">Login to accept swap intentions, or select one to explore.</p>
+              <p className="text-xs text-indigo-700 mt-1">Login to accept swap intentions.</p>
             </div>
           </div>
         </div>
@@ -242,8 +190,6 @@ function SwapIntentionsList({
             <SimpleSwapIntentionCard
               key={intention.dTag || intention.id}
               intention={intention}
-              onSelect={handleSelectIntention}
-              isSelected={selectedSwapIntention?.dTag === intention.dTag}
               onAccept={handleAcceptIntention}
               canAccept={canAccept}
             />
@@ -251,29 +197,6 @@ function SwapIntentionsList({
         })}
       </div>
 
-      {/* Finalized Orders Section */}
-      {finalizedIntentions.length > 0 && (
-        <div className="mt-12">
-          <div className="flex items-center gap-3 mb-4">
-            <h3 className="text-xl font-bold text-slate-700">Finalized Orders</h3>
-            <div className="h-px bg-slate-200 flex-1"></div>
-          </div>
-          <div className="space-y-4 opacity-75 hover:opacity-100 transition-opacity duration-300">
-            {finalizedIntentions.map((intention) => {
-              return (
-                <SimpleSwapIntentionCard
-                  key={intention.dTag || intention.id}
-                  intention={intention}
-                  onSelect={handleSelectIntention}
-                  isSelected={selectedSwapIntention?.dTag === intention.dTag}
-                  onAccept={handleAcceptIntention}
-                  canAccept={false} // never accept finalized
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

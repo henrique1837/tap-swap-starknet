@@ -163,6 +163,8 @@ export const NostrProvider = ({ children }) => {
       invoicePublisherStarknetAddress: publisherStarknetAddress,
       paymentRequest: invoiceData.paymentRequest,
       paymentHash: invoiceData.paymentHash,
+      lockTxHash: invoiceData.lockTxHash || '',
+      timelock: invoiceData.timelock || null,
       publishedAt: Math.floor(Date.now() / 1000),
     };
 
@@ -381,6 +383,8 @@ export const NostrProvider = ({ children }) => {
               created_at: event.created_at,
               paymentRequest: contentData.paymentRequest || '',
               paymentHash: contentData.paymentHash || extractTagValue(event.tags, 'h') || '',
+              lockTxHash: contentData.lockTxHash || '',
+              timelock: contentData.timelock || null,
               invoicePublisherPubkey: contentData.invoicePublisherPubkey || event.pubkey,
               invoicePublisherStarknetAddress: contentData.invoicePublisherStarknetAddress || '',
             });
@@ -432,6 +436,8 @@ export const NostrProvider = ({ children }) => {
           merged.status = 'invoice_ready';
           merged.paymentRequest = invoice.paymentRequest;
           merged.paymentHash = invoice.paymentHash;
+          merged.lockTxHash = invoice.lockTxHash || merged.lockTxHash || '';
+          merged.timelock = invoice.timelock || merged.timelock || null;
           merged.invoicePublisherPubkey = invoice.invoicePublisherPubkey;
           merged.invoicePublisherStarknetAddress = invoice.invoicePublisherStarknetAddress;
           merged.invoicePublishedAt = invoice.created_at;
