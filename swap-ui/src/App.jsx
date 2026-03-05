@@ -50,6 +50,11 @@ const RELAYS = [
 ];
 
 const extractTagValue = (tags, key) => tags.find((tag) => tag[0] === key)?.[1];
+const normalizeWantedAsset = (value) => {
+  if (!value || typeof value !== 'string') return 'STRK';
+  const normalized = value.trim().toUpperCase();
+  return normalized === 'TAPROOT_STRK' ? 'TAPROOT_STRK' : 'STRK';
+};
 
 const normalizeHashlockToHex = (hashValue) => {
   if (!hashValue || typeof hashValue !== 'string') {
@@ -139,6 +144,7 @@ function AppContent() {
     publishInvoiceForIntention,
     fetchSwapIntentions,
     deriveNostrKeysFromLNC,
+    disconnectNostr,
     isLoadingNostr,
     nostrPrivkey,
     pool,
@@ -324,9 +330,11 @@ function AppContent() {
   const isSelectedAccepter = Boolean(selectedSwapIntention && selectedSwapIntention.acceptedByPubkey === nostrPubkey);
   const isSelectedAccepted = Boolean(selectedSwapIntention && ['accepted', 'invoice_ready'].includes(selectedSwapIntention.status));
   const selectedWantedAsset = selectedSwapIntention?.wantedAsset || null;
+  const selectedWantedAssetNormalized = normalizeWantedAsset(selectedWantedAsset);
+  const isWantsStrk = selectedWantedAssetNormalized === 'STRK';
 
-  const invoicePublisherRole = selectedWantedAsset === 'STRK' ? 'accepter' : 'poster';
-  const lockerRole = selectedWantedAsset === 'STRK' ? 'accepter' : 'poster';
+  const invoicePublisherRole = isWantsStrk ? 'accepter' : 'poster';
+  const lockerRole = isWantsStrk ? 'accepter' : 'poster';
 
   const isPublisherRoleMatch =
     Boolean(selectedSwapIntention) &&
@@ -338,11 +346,27 @@ function AppContent() {
     ((lockerRole === 'poster' && isSelectedPoster) ||
       (lockerRole === 'accepter' && isSelectedAccepter));
 
-  const claimerRole = selectedWantedAsset === 'STRK' ? 'poster' : 'accepter';
+  const claimerRole = isWantsStrk ? 'poster' : 'accepter';
+  const lockerRoleLabel = lockerRole === 'poster' ? 'poster' : 'accepter';
+  const invoicePublisherRoleLabel = invoicePublisherRole === 'poster' ? 'poster' : 'accepter';
   const isClaimerRoleMatch =
     Boolean(selectedSwapIntention) &&
     ((claimerRole === 'poster' && isSelectedPoster) ||
       (claimerRole === 'accepter' && isSelectedAccepter));
+  const roleBadgeText = !isSelectedAccepted
+    ? 'Waiting for acceptance'
+    : isLockerRoleMatch
+      ? 'You are Locker'
+      : isClaimerRoleMatch
+        ? 'You are Claimer'
+        : 'Waiting for your turn';
+  const roleBadgeClassName = !isSelectedAccepted
+    ? 'bg-amber-100 text-amber-800 border-amber-200'
+    : isLockerRoleMatch
+      ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+      : isClaimerRoleMatch
+        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+        : 'bg-slate-100 text-slate-700 border-slate-200';
 
   const pendingInvoiceForSelected = Boolean(
     pendingInvoice && selectedSwapIntention && pendingInvoice.dTag === selectedSwapIntention.dTag,
@@ -392,7 +416,7 @@ function AppContent() {
     : !isSelectedAccepted
       ? 'This intention must be accepted first. Use Accept in Market.'
       : !isPublisherRoleMatch
-        ? (selectedWantedAsset === 'STRK'
+        ? (isWantsStrk
           ? 'For wants STRK, only accepter can generate invoice.'
           : 'For wants Taproot STRK, only poster can generate invoice.')
         : '';
@@ -406,7 +430,7 @@ function AppContent() {
         : !effectiveInvoicePaymentHash
           ? 'Generate invoice first. It will be published only after lock.'
           : !isLockerRoleMatch
-            ? (selectedWantedAsset === 'STRK'
+            ? (isWantsStrk
               ? 'For wants STRK, only accepter locks STRK.'
               : 'For wants Taproot STRK, only poster locks STRK.')
             : '';
@@ -455,10 +479,12 @@ function AppContent() {
 
   const handleLogoutLNC = useCallback(() => {
     logoutLNC();
+    // Force a new signature flow on next LNC login.
+    disconnectNostr();
     setLncPairingPhrase('');
     setLncPassword('');
     setErrorMessage('');
-  }, [logoutLNC]);
+  }, [logoutLNC, disconnectNostr]);
 
   const sendStarknetCalls = useCallback(async (calls) => {
     if (!account || !isWalletConnected) {
@@ -1240,7 +1266,7 @@ function AppContent() {
                 const posterPubkey = intention.posterPubkey || intention.pubkey;
                 const isPoster = nostrPubkey === posterPubkey;
                 const isAccepter = intention.acceptedByPubkey === nostrPubkey;
-                const wantedAsset = intention.wantedAsset || 'STRK';
+                const wantedAsset = normalizeWantedAsset(intention.wantedAsset);
                 const roleForLocker = wantedAsset === 'STRK' ? 'accepter' : 'poster';
                 const isLocker = (roleForLocker === 'poster' && isPoster) || (roleForLocker === 'accepter' && isAccepter);
 
@@ -1282,12 +1308,18 @@ function AppContent() {
                       </div>
                     </div>
 
+                    <div className="mb-6">
+                      <span className={`inline-flex items-center px-3 py-1.5 rounded-xl border text-xs font-bold tracking-wide uppercase ${roleBadgeClassName}`}>
+                        {roleBadgeText}
+                      </span>
+                    </div>
+
                     <div className="p-5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
                       <h4 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         Protocol Rule
                       </h4>
-                      {selectedWantedAsset === 'STRK' ? (
+                      {isWantsStrk ? (
                         <p className="text-sm text-indigo-700/80 leading-relaxed">
                           The <strong className="text-indigo-900">accepter</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">poster</strong> pays the invoice and claims STRK.
                         </p>
@@ -1309,7 +1341,7 @@ function AppContent() {
                   </div>
 
                   {/* LOCKER ROLE UI */}
-                  {isLockerRoleMatch && (
+                  {isLockerRoleMatch ? (
                     <>
                       <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-white/50">
                         <div className="flex items-center justify-between mb-6">
@@ -1475,6 +1507,16 @@ function AppContent() {
                         )}
                       </div>
                     </>
+                  ) : (
+                    <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-white/50">
+                      <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200">
+                        <p className="text-sm text-slate-800 font-bold mb-2">Waiting for counterparty lock step</p>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          This swap is waiting for the <strong className="text-slate-800 capitalize">{lockerRoleLabel}</strong> to generate/publish the invoice and lock STRK first.
+                          You can continue in <strong className="text-slate-800">Claim</strong> once the invoice appears on Nostr.
+                        </p>
+                      </div>
+                    </div>
                   )}
 
 
@@ -1636,7 +1678,7 @@ function AppContent() {
                             <div className="flex items-center justify-center w-12 h-12 bg-slate-200 rounded-full mx-auto mb-4 animate-pulse">
                               <svg className="w-6 h-6 text-slate-500 border-b" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                             </div>
-                            <p className="text-sm text-slate-700 font-bold">Waiting for Invoice from Poster...</p>
+                            <p className="text-sm text-slate-700 font-bold">Waiting for Invoice from {invoicePublisherRoleLabel.charAt(0).toUpperCase() + invoicePublisherRoleLabel.slice(1)}...</p>
                             <p className="text-xs text-slate-500 mt-2 mb-6 max-w-sm mx-auto">The invoice will appear here automatically once published to Nostr. You can also paste it manually if provided out-of-band.</p>
 
                             <div className="max-w-md mx-auto space-y-4">

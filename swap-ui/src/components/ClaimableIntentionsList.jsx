@@ -2,6 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNostr } from '../contexts/NostrContext';
 import { nip19 } from 'nostr-tools';
 
+const normalizeWantedAsset = (value) => {
+    if (!value || typeof value !== 'string') return 'STRK';
+    const normalized = value.trim().toUpperCase();
+    return normalized === 'TAPROOT_STRK' ? 'TAPROOT_STRK' : 'STRK';
+};
+
 const statusClass = (status) => {
     if (status === 'invoice_ready') return 'text-emerald-600';
     if (status === 'locked') return 'text-purple-600';
@@ -111,7 +117,7 @@ function ClaimableIntentionsList({
 
                 if (!isPoster && !isAccepter) return false; // Not involved
 
-                const wantedAsset = intention.wantedAsset || 'STRK';
+                const wantedAsset = normalizeWantedAsset(intention.wantedAsset);
                 const isClaimer = (wantedAsset === 'STRK' && isPoster) || (wantedAsset === 'TAPROOT_STRK' && isAccepter);
 
                 if (!isClaimer) return false; // User is the Locker, not Claimer
