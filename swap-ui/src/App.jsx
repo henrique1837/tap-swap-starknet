@@ -44,6 +44,12 @@ const preimageToHex = (value) => {
   }
   return '';
 };
+const isZeroPreimage = (hexValue) => /^[0]+$/.test((hexValue || '').trim());
+const normalizePreimageHex = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const raw = value.trim().toLowerCase().replace(/^0x/, '');
+  return /^[0-9a-f]{64}$/.test(raw) ? raw : '';
+};
 
 const SWAP_AMOUNT_TAP_SATOSHIS = 500;
 // Represents 0.00005 STRK. (STRK has 18 decimals)
@@ -176,6 +182,7 @@ function AppContent() {
     nostrPubkey,
     publishSwapIntention,
     publishInvoiceForIntention,
+    publishClaimForIntention,
     fetchSwapIntentions,
     deriveNostrKeysFromLNC,
     disconnectNostr,
@@ -215,6 +222,7 @@ function AppContent() {
   const [strkLockVerified, setStrkLockVerified] = useState(false);
   const [claimTxHash, setClaimTxHash] = useState('');
   const [claimerPreimage, setClaimerPreimage] = useState('');
+  const [isClaimPreimageLocked, setIsClaimPreimageLocked] = useState(false);
   const [isPayingInvoice, setIsPayingInvoice] = useState(false);
   const [isClaimingStrk, setIsClaimingStrk] = useState(false);
   const [invoiceMethod, setInvoiceMethod] = useState('manual');
@@ -443,7 +451,10 @@ function AppContent() {
   }, [sanitizedManualInvoice, selectedSwapIntention, invoicePaymentRequest, pendingInvoiceForSelected, pendingInvoice]);
 
   const canGenerateInvoice = Boolean(selectedSwapIntention) && isSelectedAccepted && isPublisherRoleMatch;
-  const canLockStrk = Boolean(selectedSwapIntention) && isSelectedAccepted && isLockerRoleMatch && Boolean(effectiveInvoicePaymentHash);
+  const isLockAlreadyDone = Boolean(
+    selectedSwapIntention && ['invoice_ready', 'locked', 'claimed', 'refunded'].includes(selectedSwapIntention.status),
+  );
+  const canLockStrk = Boolean(selectedSwapIntention) && isSelectedAccepted && isLockerRoleMatch && Boolean(effectiveInvoicePaymentHash) && !isLockAlreadyDone;
 
   const generateInvoiceDisabledReason = !selectedSwapIntention
     ? 'Select an intention first.'
@@ -457,9 +468,11 @@ function AppContent() {
 
   const lockStrkDisabledReason = !selectedSwapIntention
     ? 'Select an intention first.'
+    : isLockAlreadyDone
+      ? 'STRK is already locked or finalized for this intention.'
     : !isWalletConnected || !activeStarknetAddress
       ? 'Connect your Starknet wallet first.'
-      : !isSelectedAccepted
+    : !isSelectedAccepted
         ? 'This intention must be accepted first.'
         : !effectiveInvoicePaymentHash
           ? 'Generate invoice first. It will be published only after lock.'
@@ -796,7 +809,7 @@ function AppContent() {
                 }
 
                 const preimage = preimageToHex(payment.paymentPreimage);
-                if (preimage) {
+                if (status.includes('SUCCEEDED') && preimage && !isZeroPreimage(preimage)) {
                   finalize(preimage);
                 }
               },
@@ -821,11 +834,17 @@ function AppContent() {
         preimageHex = preimageToHex(response.paymentPreimage);
       }
 
-      if (!preimageHex) {
+      if (!preimageHex || isZeroPreimage(preimageHex)) {
         throw new Error('No preimage received in payment response.');
       }
 
-      setClaimerPreimage(preimageHex);
+      const normalizedPaidPreimage = normalizePreimageHex(preimageHex);
+      if (!normalizedPaidPreimage) {
+        throw new Error('LNC returned a non-hex preimage.');
+      }
+
+      setClaimerPreimage(normalizedPaidPreimage);
+      setIsClaimPreimageLocked(true);
       setSwapStatus('Invoice paid! Preimage received. You can now claim STRK.');
     } catch (err) {
       console.error('LNC Payment failed:', err);
@@ -837,8 +856,9 @@ function AppContent() {
   };
 
   const handleClaimSTRK = async () => {
-    if (!claimerPreimage) {
-      setErrorMessage('Preimage required to claim STRK.');
+    const normalizedPreimage = normalizePreimageHex(claimerPreimage);
+    if (!normalizedPreimage) {
+      setErrorMessage(claimerPreimage ? 'Preimage must be a 32-byte hex value.' : 'Preimage required to claim STRK.');
       return;
     }
     setIsClaimingStrk(true);
@@ -852,7 +872,7 @@ function AppContent() {
       // Therefore, to make the `claim_swap` pass its internal `hashlock == self.compute_sha256_hash(secret)` check,
       // we must pass the actual hashlock as the "secret". 
       // Once the Cairo contract implements real sha256, revert this to use the real `claimerPreimage`.
-      const secretHex = effectiveInvoicePaymentHash || (claimerPreimage.startsWith('0x') ? claimerPreimage : `0x${claimerPreimage}`);
+      const secretHex = effectiveInvoicePaymentHash || `0x${normalizedPreimage}`;
 
       const claimCalldata = CallData.compile([uint256.bnToUint256(secretHex)]);
       const hash = await sendStarknetCalls([
@@ -889,7 +909,19 @@ function AppContent() {
         throw new Error('Transaction confirmation timeout or failed.');
       }
 
-      setSwapStatus('STRK Claimed Successfully! Swap Completed.');
+      if (selectedSwapIntention) {
+        try {
+          await publishClaimForIntention(selectedSwapIntention, {
+            claimTxHash: hash,
+            paymentHash: effectiveInvoicePaymentHash || '',
+          }, activeStarknetAddress || '');
+        } catch (publishErr) {
+          console.warn('Failed to publish claimed status to Nostr:', publishErr);
+        }
+      }
+
+      setSelectedSwapIntention((prev) => (prev ? { ...prev, status: 'claimed' } : prev));
+      setSwapStatus('STRK claimed successfully and status published to Nostr.');
       setClaimedSwapDTags(prev => [...prev, selectedSwapIntention.dTag]);
     } catch (err) {
       console.error('Error claiming STRK:', err);
@@ -1174,14 +1206,14 @@ function AppContent() {
           };
         });
 
-        setSwapStatus('STRK locked and invoice published to Nostr. Counterparty can continue.');
+        setSwapStatus('STRK locked and invoice published. Waiting for invoice payment.');
         setPendingInvoice(null);
       } else {
-        setSwapStatus('STRK locked on Starknet.');
+        setSelectedSwapIntention((prev) => (prev ? { ...prev, status: 'locked', paymentHash: normalizedHashlock } : prev));
+        setSwapStatus('STRK locked on Starknet. Waiting for invoice payment.');
       }
 
       setErrorMessage('');
-      startInvoicePolling();
     } catch (err) {
       console.error('Error initiating STRK swap:', err);
       setErrorMessage(`Failed to initiate STRK swap: ${err.message || String(err)}`);
@@ -1248,6 +1280,8 @@ function AppContent() {
       setInvoicePaymentHash(null);
       setPendingInvoice(null);
       setManualInvoice('');
+      setClaimerPreimage('');
+      setIsClaimPreimageLocked(false);
       setInvoiceMethod(lncIsConnected ? 'lnc' : 'manual');
       return;
     }
@@ -1808,10 +1842,18 @@ function AppContent() {
                                   <input
                                     type="text"
                                     value={claimerPreimage}
-                                    onChange={(e) => setClaimerPreimage(e.target.value)}
+                                    onChange={(e) => {
+                                      setIsClaimPreimageLocked(false);
+                                      setClaimerPreimage(e.target.value);
+                                    }}
                                     placeholder="Preimage Hex (0x...)"
-                                    className="w-full p-3 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white shadow-inner transition-colors"
+                                    disabled={isClaimPreimageLocked}
+                                    readOnly={isClaimPreimageLocked}
+                                    className="w-full p-3 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white shadow-inner transition-colors disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                                   />
+                                  {isClaimPreimageLocked && (
+                                    <p className="text-[10px] text-emerald-600 mt-2">Preimage auto-filled from LNC payment and locked.</p>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1842,9 +1884,14 @@ function AppContent() {
                                 <input
                                   type="text"
                                   value={claimerPreimage}
-                                  onChange={(e) => setClaimerPreimage(e.target.value)}
+                                  onChange={(e) => {
+                                    setIsClaimPreimageLocked(false);
+                                    setClaimerPreimage(e.target.value);
+                                  }}
                                   placeholder="Preimage Hex (0x...)"
-                                  className="w-full p-3 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none bg-white shadow-sm"
+                                  disabled={isClaimPreimageLocked}
+                                  readOnly={isClaimPreimageLocked}
+                                  className="w-full p-3 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none bg-white shadow-sm disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                                 />
                               </div>
                             </div>
@@ -1854,6 +1901,11 @@ function AppContent() {
 
                       {/* Step 3: Claim STRK */}
                       <div className={`mb-6 p-6 rounded-2xl border transition-all duration-300 shadow-sm ${claimerPreimage ? 'bg-emerald-50 border-emerald-300 scale-[1.01]' : 'bg-slate-50 border-slate-200 opacity-60 grayscale-[0.2]'}`}>
+                        {selectedSwapIntention?.status === 'claimed' && (
+                          <div className="mb-4 p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold">
+                            This intention has already been claimed and published to Nostr.
+                          </div>
+                        )}
                         <div className="flex items-center justify-between mb-4">
                           <h3 className={`text-lg font-bold flex items-center gap-2 ${claimerPreimage ? 'text-slate-800' : 'text-slate-500'}`}>
                             <span className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-sm">3️⃣</span>
@@ -1867,7 +1919,7 @@ function AppContent() {
 
                         <button
                           onClick={handleClaimSTRK}
-                          disabled={!claimerPreimage || isClaimingStrk}
+                          disabled={!claimerPreimage || isClaimingStrk || selectedSwapIntention?.status === 'claimed'}
                           className={`w-full font-bold py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5 ${claimerPreimage ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-lg hover:shadow-xl' : 'bg-slate-200 text-slate-400 disabled:opacity-50'}`}
                         >
                           {isClaimingStrk ? (

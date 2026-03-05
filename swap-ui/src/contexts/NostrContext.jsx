@@ -19,6 +19,7 @@ const RELAYS = [
 export const NOSTR_SWAP_INTENTION_KIND = 30079; // NIP-33 intention (poster-owned)
 export const NOSTR_SWAP_ACCEPT_KIND = 30080; // acceptance events
 export const NOSTR_SWAP_INVOICE_KIND = 30081; // invoice publication events
+export const NOSTR_SWAP_CLAIM_KIND = 30082; // claim publication events
 export const NOSTR_SWAP_TOPIC = 'tap-strk-swap';
 
 const NostrContext = createContext(null);
@@ -242,15 +243,64 @@ export const NostrProvider = ({ children }) => {
     }
   }, [nostrPubkey, privKey, pool]);
 
+  const publishClaimForIntention = useCallback(async (intention, claimData = {}, claimerStarknetAddress = '') => {
+    if (!nostrPubkey || !privKey) throw new Error('Nostr identity not established or private key unavailable.');
+
+    const posterPubkey = intention.posterPubkey || intention.pubkey;
+    const dTag = intention.dTag;
+    if (!posterPubkey || !dTag || !intention.id) throw new Error('Invalid intention payload.');
+
+    const aRef = `${NOSTR_SWAP_INTENTION_KIND}:${posterPubkey}:${dTag}`;
+    const content = {
+      dTag,
+      intentionId: intention.id,
+      status: 'claimed',
+      posterPubkey,
+      claimerPubkey: nostrPubkey,
+      claimerStarknetAddress,
+      claimTxHash: claimData.claimTxHash || '',
+      paymentHash: claimData.paymentHash || '',
+      claimedAt: Math.floor(Date.now() / 1000),
+    };
+
+    const tags = [
+      ['t', NOSTR_SWAP_TOPIC],
+      ['s', 'claimed'],
+      ['w', normalizeWantedAsset(intention.wantedAsset)],
+      ['a', aRef],
+      ['e', intention.id],
+      ['d', dTag],
+      ['p', posterPubkey],
+      ['p', nostrPubkey],
+    ];
+
+    const eventTemplate = {
+      kind: NOSTR_SWAP_CLAIM_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      tags,
+      content: JSON.stringify(content),
+    };
+
+    try {
+      const signedEvent = finalizeEvent({ ...eventTemplate, pubkey: nostrPubkey }, privKey);
+      await Promise.any(pool.publish(RELAYS, signedEvent));
+      return signedEvent.id;
+    } catch (err) {
+      console.error('Failed to publish claim update:', err);
+      throw new Error('Failed to publish claim update. Please try again.');
+    }
+  }, [nostrPubkey, privKey, pool]);
+
   const fetchSwapIntentions = useCallback(async () => {
     const intentionsMap = new Map();
     const acceptMap = new Map();
     const invoiceMap = new Map();
+    const claimMap = new Map();
 
     try {
       // Query all related kinds in one go for better relay consistency
       const allEvents = await pool.querySync(RELAYS, {
-        kinds: [NOSTR_SWAP_INTENTION_KIND, NOSTR_SWAP_ACCEPT_KIND, NOSTR_SWAP_INVOICE_KIND],
+        kinds: [NOSTR_SWAP_INTENTION_KIND, NOSTR_SWAP_ACCEPT_KIND, NOSTR_SWAP_INVOICE_KIND, NOSTR_SWAP_CLAIM_KIND],
         '#t': [NOSTR_SWAP_TOPIC],
         limit: 500,
       });
@@ -261,6 +311,7 @@ export const NostrProvider = ({ children }) => {
       const intentionEvents = allEvents.filter(e => e.kind === NOSTR_SWAP_INTENTION_KIND);
       const acceptEvents = allEvents.filter(e => e.kind === NOSTR_SWAP_ACCEPT_KIND);
       const invoiceEvents = allEvents.filter(e => e.kind === NOSTR_SWAP_INVOICE_KIND);
+      const claimEvents = allEvents.filter(e => e.kind === NOSTR_SWAP_CLAIM_KIND);
 
       for (const event of intentionEvents) {
         try {
@@ -339,9 +390,34 @@ export const NostrProvider = ({ children }) => {
         }
       }
 
+      for (const event of claimEvents) {
+        try {
+          const contentData = JSON.parse(event.content || '{}');
+          const dFromTag = extractTagValue(event.tags, 'd');
+          const dFromA = extractDTagFromARef(extractTagValue(event.tags, 'a'));
+          const dTag = contentData.dTag || dFromTag || dFromA;
+          if (!dTag) continue;
+
+          const current = claimMap.get(dTag);
+          if (!current || event.created_at >= current.created_at) {
+            claimMap.set(dTag, {
+              id: event.id,
+              created_at: event.created_at,
+              claimerPubkey: contentData.claimerPubkey || event.pubkey,
+              claimerStarknetAddress: contentData.claimerStarknetAddress || '',
+              claimTxHash: contentData.claimTxHash || '',
+              paymentHash: contentData.paymentHash || '',
+            });
+          }
+        } catch (e) {
+          console.error(`Error parsing swap claim event ${event.id}:`, e);
+        }
+      }
+
       const intentions = Array.from(intentionsMap.values()).map((item) => {
         const accepted = acceptMap.get(item.dTag);
         const invoice = invoiceMap.get(item.dTag);
+        const claimed = claimMap.get(item.dTag);
 
         const merged = { ...item };
 
@@ -359,6 +435,14 @@ export const NostrProvider = ({ children }) => {
           merged.invoicePublisherPubkey = invoice.invoicePublisherPubkey;
           merged.invoicePublisherStarknetAddress = invoice.invoicePublisherStarknetAddress;
           merged.invoicePublishedAt = invoice.created_at;
+        }
+
+        if (claimed) {
+          merged.status = 'claimed';
+          merged.claimerPubkey = claimed.claimerPubkey;
+          merged.claimerStarknetAddress = claimed.claimerStarknetAddress;
+          merged.claimTxHash = claimed.claimTxHash;
+          merged.claimedAt = claimed.created_at;
         }
 
         return merged;
@@ -383,6 +467,7 @@ export const NostrProvider = ({ children }) => {
         publishSwapIntention,
         postNewSwapIntention,
         publishInvoiceForIntention,
+        publishClaimForIntention,
         acceptSwapIntention,
         fetchSwapIntentions,
         deriveNostrKeysFromLNC,

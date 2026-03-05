@@ -63,7 +63,8 @@ export const useLNC = () => {
     } catch (err) {
       console.error('LNC Login Error (Password):', err);
       setError(err.message || "Failed to login with password. Incorrect password or session expired.");
-      setStatus('Error');
+      // Keep paired state so user can retry password without being forced to re-pair.
+      setStatus(currentLnc.credentials.isPaired ? 'Ready to log in' : 'Disconnected');
       // If login fails, clear password so user can re-enter or try pairing again
       currentLnc.credentials.password = '';
       throw err;
@@ -110,6 +111,6 @@ export const useLNC = () => {
     logout,
     error,
     isReady: status === 'Connected',
-    isPaired: status === 'Connected' || status === 'Ready to log in',
+    isPaired: lncInstance.credentials.isPaired || status === 'Connected' || status === 'Ready to log in',
   };
 };
