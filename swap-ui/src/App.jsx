@@ -118,18 +118,6 @@ const normalizeStarknetTxHash = (value) => {
   return '';
 };
 
-const asBoolFlag = (value) => {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'bigint') return value !== 0n;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (!normalized || normalized === '0' || normalized === '0x0' || normalized === 'false') return false;
-    return true;
-  }
-  return Boolean(value);
-};
-
 const formatUnixTime = (unixSeconds) => {
   if (!unixSeconds) return 'Not available';
   const ts = Number(unixSeconds);
@@ -149,6 +137,15 @@ const formatRemainingTime = (unixSeconds) => {
   const remMinutes = minutes % 60;
   return `${hours}h ${remMinutes}m remaining`;
 };
+
+const SHORT_KEY_SIZE = 10;
+const shortenHex = (value, size = SHORT_KEY_SIZE) => {
+  if (!value || typeof value !== 'string') return 'Not available';
+  if (value.length <= size * 2 + 3) return value;
+  return `${value.slice(0, size)}...${value.slice(-size)}`;
+};
+
+const STARKSCAN_SEPOLIA_TX_PREFIX = 'https://sepolia.starkscan.co/tx/';
 
 
 
@@ -220,7 +217,7 @@ function AppContent() {
 
   const [selectedSwapIntention, setSelectedSwapIntention] = useState(null);
   const [wantedAsset, setWantedAsset] = useState('STRK');
-  const [allowSelfAccept, setAllowSelfAccept] = useState(true);
+  const [allowSelfAccept] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [connectionSuccess, setConnectionSuccess] = useState(false);
 
@@ -249,6 +246,7 @@ function AppContent() {
   const [walletError, setWalletError] = useState('');
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
   const [finalizeIntentions, setFinalizeIntentions] = useState([]);
+  const [participantIntentions, setParticipantIntentions] = useState([]);
   const [claimedIntentions, setClaimedIntentions] = useState([]);
   const [isLoadingFinalizeIntentions, setIsLoadingFinalizeIntentions] = useState(false);
   const isWalletConnected = Boolean(isConnected && address);
@@ -475,6 +473,72 @@ function AppContent() {
   const selectedLockTxHash = selectedSwapIntention?.lockTxHash || '';
   const selectedTimelock = selectedSwapIntention?.timelock || null;
   const selectedInvoicePublishedAt = selectedSwapIntention?.invoicePublishedAt || null;
+  const selectedAcceptedAt = selectedSwapIntention?.acceptedAt || null;
+  const selectedCreatedAt = selectedSwapIntention?.created_at || null;
+  const selectedEstimatedLockAt = selectedTimelock
+    ? Math.max(Number(selectedTimelock) - STRK_TIMELOCK_OFFSET, 0)
+    : null;
+  const selectedPosterAddress = selectedSwapIntention?.posterStarknetAddress || '';
+  const selectedAccepterAddress = selectedSwapIntention?.accepterStarknetAddress || '';
+  const selectedInvoicePublisherPubkey = selectedSwapIntention?.invoicePublisherPubkey || '';
+  const selectedInvoicePublisherAddress = selectedSwapIntention?.invoicePublisherStarknetAddress || '';
+  const selectedIntentionId = selectedSwapIntention?.id || '';
+  const selectedDTag = selectedSwapIntention?.dTag || '';
+  const finalizeInvoiceRows = useMemo(() => {
+    if (!nostrPubkey) return [];
+
+    const rows = participantIntentions
+      .filter((item) => item.paymentRequest || item.paymentHash || ['invoice_ready', 'claimed', 'locked'].includes(item.status))
+      .map((item) => {
+        const posterPubkey = item.posterPubkey || item.pubkey || '';
+        const isPoster = posterPubkey === nostrPubkey;
+        const isAccepter = item.acceptedByPubkey === nostrPubkey;
+        const wantsStrk = normalizeWantedAsset(item.wantedAsset) === 'STRK';
+        const invoicePublisherRoleForItem = wantsStrk ? 'accepter' : 'poster';
+        const claimerRoleForItem = wantsStrk ? 'poster' : 'accepter';
+        const amInvoicePublisher =
+          (invoicePublisherRoleForItem === 'poster' && isPoster) ||
+          (invoicePublisherRoleForItem === 'accepter' && isAccepter);
+        const amClaimer =
+          (claimerRoleForItem === 'poster' && isPoster) ||
+          (claimerRoleForItem === 'accepter' && isAccepter);
+
+        const activityLabel =
+          item.status === 'claimed'
+            ? amInvoicePublisher
+              ? 'Received'
+              : amClaimer
+                ? 'Paid'
+                : 'Claimed'
+            : amInvoicePublisher
+              ? 'Awaiting Payment'
+              : amClaimer
+                ? 'Ready to Pay'
+                : 'In Progress';
+
+        const activityTone =
+          activityLabel === 'Received'
+            ? 'bg-emerald-100 text-emerald-700'
+            : activityLabel === 'Paid'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-amber-100 text-amber-700';
+
+        return {
+          ...item,
+          posterPubkey,
+          activityLabel,
+          activityTone,
+          amInvoicePublisher,
+          amClaimer,
+          counterpartyPubkey: isPoster ? (item.acceptedByPubkey || '') : posterPubkey,
+          counterpartyStarknet: isPoster ? (item.accepterStarknetAddress || '') : (item.posterStarknetAddress || ''),
+          sortTime: item.claimedAt || item.invoicePublishedAt || item.acceptedAt || item.created_at || 0,
+        };
+      });
+
+    rows.sort((a, b) => b.sortTime - a.sortTime);
+    return rows;
+  }, [participantIntentions, nostrPubkey]);
 
   const canGenerateInvoice = Boolean(selectedSwapIntention) && isSelectedAccepted && isPublisherRoleMatch;
   const isLockAlreadyDone = Boolean(
@@ -1176,40 +1240,9 @@ function AppContent() {
       if (!confirmed) {
         throw new Error('Transaction confirmation timeout or failed.');
       }
-      setSwapStatus('Transaction confirmed! Verifying lock on-chain...');
-
-      let swapContract;
-      if (account) {
-        swapContract = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: account });
-      } else {
-        swapContract = new Contract({ abi: AtomicSwapArtifact.abi, address: contractAddress, provider: starknetReadProvider });
-      }
-      // Different providers can expect/return slightly different key/flag shapes.
-      // Try both hashlock representations and normalize boolean-like flags.
-      let swapData = null;
-      for (const lookupKey of [normalizedHashlock, hashlockU256]) {
-        try {
-          const candidate = await swapContract.get_swap(lookupKey);
-          const candidateAmount = candidate?.value ? uint256.uint256ToBN(candidate.value) : 0n;
-          if (candidateAmount > 0n) {
-            swapData = candidate;
-            break;
-          }
-          // Keep candidate as fallback if nothing better is found.
-          if (!swapData) swapData = candidate;
-        } catch {
-          // Try next lookup key format.
-        }
-      }
-
-      // value is a u256 struct { low, high } — convert to BigInt before comparing
-      const lockedAmount = swapData?.value ? uint256.uint256ToBN(swapData.value) : 0n;
-      const isRefunded = asBoolFlag(swapData?.refunded);
-      const isClaimed = asBoolFlag(swapData?.claimed);
-
-      if (!swapData || lockedAmount === 0n || isRefunded || isClaimed) {
-        throw new Error('Swap lock verification failed after confirmation.');
-      }
+      // Confirmation on Starknet is considered the source of truth.
+      // We proceed immediately to publish the Nostr update and avoid flaky extra reads.
+      setSwapStatus('Transaction confirmed on Starknet. Publishing swap update...');
 
       setInvoicePaymentHash(normalizedHashlock);
 
@@ -1353,6 +1386,7 @@ function AppContent() {
         : intentions.filter((item) => item.status === 'claimed');
 
       setFinalizeIntentions(active);
+      setParticipantIntentions(mine);
       setClaimedIntentions(claimed);
     } catch (err) {
       console.error('Error loading finalize lists:', err);
@@ -1483,18 +1517,6 @@ function AppContent() {
                 wantedAsset={wantedAsset}
                 setWantedAsset={setWantedAsset}
               />
-
-              <div className="w-full max-w-2xl mt-4 flex items-center gap-2">
-                <input
-                  id="self-accept"
-                  type="checkbox"
-                  checked={allowSelfAccept}
-                  onChange={(e) => setAllowSelfAccept(e.target.checked)}
-                />
-                <label htmlFor="self-accept" className="text-sm text-gray-700">
-                  Test mode: allow accepting my own intention
-                </label>
-              </div>
             </>
           )}
 
@@ -1528,6 +1550,15 @@ function AppContent() {
                       }`}
                   >
                     Lock/Claim
+                  </button>
+                  <button
+                    onClick={() => setFinalizeView('invoices')}
+                    className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${finalizeView === 'invoices'
+                      ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                      }`}
+                  >
+                    Invoices
                   </button>
                 </div>
               </div>
@@ -1592,6 +1623,72 @@ function AppContent() {
                   >
                     Go to Select
                   </button>
+                </div>
+              )}
+
+              {finalizeView === 'invoices' && (
+                <div className="bg-white/80 backdrop-blur-lg p-6 rounded-3xl shadow-xl w-full max-w-5xl mt-4 border border-white/50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800">Invoice Activity</h3>
+                      <p className="text-sm text-slate-500">Invoices paid/received for intentions you participated in.</p>
+                    </div>
+                    <button
+                      onClick={refreshFinalizeLists}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                      disabled={isLoadingFinalizeIntentions}
+                    >
+                      {isLoadingFinalizeIntentions ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                  </div>
+
+                  {finalizeInvoiceRows.length === 0 ? (
+                    <p className="text-sm text-slate-500">No invoice activity found yet for your swap intentions.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {finalizeInvoiceRows.map((row) => (
+                        <div key={row.dTag || row.id} className="p-5 rounded-2xl border border-slate-200 bg-white shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-slate-800">{(row.dTag || row.id || '').slice(0, 14)}...</p>
+                              <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${row.activityTone}`}>{row.activityLabel}</span>
+                              <span className="text-[10px] uppercase font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600">{row.status}</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
+                            <p><span className="font-semibold text-slate-700">Wanted:</span> {row.wantedAsset || 'STRK'} • {row.amountSTRK} STRK • {row.amountSats} sats</p>
+                            <p><span className="font-semibold text-slate-700">Counterparty:</span> <span className="font-mono">{shortenHex(row.counterpartyPubkey)}</span></p>
+                            <p><span className="font-semibold text-slate-700">Counterparty Starknet:</span> <span className="font-mono break-all">{row.counterpartyStarknet || 'Not available'}</span></p>
+                            <p><span className="font-semibold text-slate-700">Invoice Published:</span> {formatUnixTime(row.invoicePublishedAt)}</p>
+                            <p><span className="font-semibold text-slate-700">Claimed At:</span> {formatUnixTime(row.claimedAt)}</p>
+                            <p><span className="font-semibold text-slate-700">Timelock:</span> {row.timelock ? `${formatUnixTime(row.timelock)} (${formatRemainingTime(row.timelock)})` : 'Not available'}</p>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2 mb-3 text-xs">
+                            <p><span className="font-semibold text-slate-700">Payment Hash:</span> <span className="font-mono break-all">{row.paymentHash || 'Not available'}</span></p>
+                            <p><span className="font-semibold text-slate-700">Lock Tx:</span> <span className="font-mono break-all">{row.lockTxHash || 'Not available'}</span></p>
+                            <p><span className="font-semibold text-slate-700">Claim Tx:</span> <span className="font-mono break-all">{row.claimTxHash || 'Not available'}</span></p>
+                          </div>
+
+                          {row.paymentRequest && (
+                            <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <summary className="cursor-pointer text-sm font-semibold text-slate-700">Decode Invoice Details</summary>
+                              <div className="mt-3">
+                                <InvoiceDecoder
+                                  key={`invoice-feed-${row.dTag || row.id}`}
+                                  invoice={row.paymentRequest}
+                                  title="Invoice Snapshot"
+                                  lncClient={lncClient}
+                                  assetId={FORCED_TAPROOT_ASSET_ID}
+                                />
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1682,6 +1779,16 @@ function AppContent() {
                               <p className="text-xs font-mono text-slate-700 break-all">
                                 {selectedLockTxHash || 'Not available on this intention.'}
                               </p>
+                              {selectedLockTxHash && (
+                                <a
+                                  href={`${STARKSCAN_SEPOLIA_TX_PREFIX}${selectedLockTxHash}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-block mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                                >
+                                  View on Starkscan →
+                                </a>
+                              )}
                             </div>
                             <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
                               <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Hashlock (Payment Hash)</p>
@@ -1705,6 +1812,32 @@ function AppContent() {
                               <p className="text-sm font-semibold text-slate-800">
                                 {selectedInvoicePublishedAt ? formatUnixTime(selectedInvoicePublishedAt) : 'Not available'}
                               </p>
+                            </div>
+                          </div>
+
+                          <div className="mb-6 p-5 rounded-2xl border border-slate-200 bg-slate-50">
+                            <h4 className="text-sm font-bold text-slate-800 mb-3">Swap Timeline</h4>
+                            <div className="space-y-2 text-xs text-slate-600">
+                              <p><span className="font-semibold text-slate-700">Created:</span> {formatUnixTime(selectedCreatedAt)}</p>
+                              <p><span className="font-semibold text-slate-700">Accepted:</span> {formatUnixTime(selectedAcceptedAt)}</p>
+                              <p><span className="font-semibold text-slate-700">Estimated Lock Time:</span> {formatUnixTime(selectedEstimatedLockAt)}</p>
+                              <p><span className="font-semibold text-slate-700">Invoice Published:</span> {formatUnixTime(selectedInvoicePublishedAt)}</p>
+                              <p><span className="font-semibold text-slate-700">Expiry (Timelock):</span> {selectedTimelock ? `Unix ${selectedTimelock} (${formatRemainingTime(selectedTimelock)})` : 'Not available'}</p>
+                            </div>
+                          </div>
+
+                          <div className="mb-6 p-5 rounded-2xl border border-slate-200 bg-slate-50">
+                            <h4 className="text-sm font-bold text-slate-800 mb-3">Participants & Metadata</h4>
+                            <div className="space-y-2 text-xs text-slate-600">
+                              <p><span className="font-semibold text-slate-700">Poster Pubkey:</span> <span className="font-mono">{shortenHex(selectedPosterPubkey)}</span></p>
+                              <p><span className="font-semibold text-slate-700">Accepter Pubkey:</span> <span className="font-mono">{shortenHex(selectedSwapIntention?.acceptedByPubkey || '')}</span></p>
+                              <p><span className="font-semibold text-slate-700">Invoice Publisher Pubkey:</span> <span className="font-mono">{shortenHex(selectedInvoicePublisherPubkey)}</span></p>
+                              <p><span className="font-semibold text-slate-700">Poster Starknet:</span> <span className="font-mono break-all">{selectedPosterAddress || 'Not available'}</span></p>
+                              <p><span className="font-semibold text-slate-700">Accepter Starknet:</span> <span className="font-mono break-all">{selectedAccepterAddress || 'Not available'}</span></p>
+                              <p><span className="font-semibold text-slate-700">Invoice Publisher Starknet:</span> <span className="font-mono break-all">{selectedInvoicePublisherAddress || 'Not available'}</span></p>
+                              <p><span className="font-semibold text-slate-700">Contract:</span> <span className="font-mono break-all">{contractAddress}</span></p>
+                              <p><span className="font-semibold text-slate-700">Intention ID:</span> <span className="font-mono break-all">{selectedIntentionId || 'Not available'}</span></p>
+                              <p><span className="font-semibold text-slate-700">dTag:</span> <span className="font-mono break-all">{selectedDTag || 'Not available'}</span></p>
                             </div>
                           </div>
 
@@ -1906,7 +2039,7 @@ function AppContent() {
             </>
           )}
 
-          {activeTab === 'finalize' && !isLockerRoleMatch && (
+          {activeTab === 'finalize' && finalizeView === 'flow' && !isLockerRoleMatch && (
             <>
               {selectedSwapIntention && (
                 <>
@@ -1917,7 +2050,7 @@ function AppContent() {
                           <div className="bg-purple-100 text-purple-600 p-3 rounded-2xl">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                           </div>
-                          <h2 className="text-2xl font-bold text-slate-800">Your Action: Claim STRK</h2>
+                          <h2 className="text-2xl font-bold text-slate-800">Claim STRK</h2>
                         </div>
                         <span className="px-4 py-1.5 bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 text-xs font-bold rounded-xl uppercase tracking-wider shadow-sm">
                           Role: Claimer
