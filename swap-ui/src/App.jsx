@@ -111,6 +111,7 @@ function AppContent() {
     connectWithPairing,
     loginWithPassword,
     disconnect: disconnectLNC,
+    logout: logoutLNC,
     error: lncError,
     isReady: lncIsConnected,
     isPaired: lncIsPaired,
@@ -445,6 +446,19 @@ function AppContent() {
       setErrorMessage(err.message || 'Failed to login to LNC node.');
     }
   };
+
+  const handleDisconnectLNC = useCallback(() => {
+    disconnectLNC();
+    setLncPassword('');
+    setErrorMessage('');
+  }, [disconnectLNC]);
+
+  const handleLogoutLNC = useCallback(() => {
+    logoutLNC();
+    setLncPairingPhrase('');
+    setLncPassword('');
+    setErrorMessage('');
+  }, [logoutLNC]);
 
   const sendStarknetCalls = useCallback(async (calls) => {
     if (!account || !isWalletConnected) {
@@ -1111,7 +1125,8 @@ function AppContent() {
           isConnectingLNC={lncStatus === 'Connecting'}
           handleConnectLNCWithPairing={handleConnectLNCWithPairing}
           handleLoginLNCWithPassword={handleLoginLNCWithPassword}
-          handleDisconnectLNC={disconnectLNC}
+          handleDisconnectLNC={handleDisconnectLNC}
+          handleLogoutLNC={handleLogoutLNC}
           connectionErrorLNC={lncError}
           isWalletConnected={isWalletConnected}
           walletAddress={activeStarknetAddress}

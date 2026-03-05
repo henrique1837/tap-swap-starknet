@@ -17,6 +17,7 @@ function ConnectScreen({
   handleConnectLNCWithPairing,
   handleLoginLNCWithPassword,
   handleDisconnectLNC,
+  handleLogoutLNC,
   connectionErrorLNC,
   isWalletConnected,
   walletAddress,
@@ -115,7 +116,7 @@ function ConnectScreen({
                     Connect to Node
                   </button>
                   <button
-                    onClick={handleDisconnectLNC}
+                    onClick={handleLogoutLNC}
                     className="w-full py-2 text-xs text-slate-500 hover:text-rose-400 font-medium transition-colors"
                   >
                     Clear pairing and start over
