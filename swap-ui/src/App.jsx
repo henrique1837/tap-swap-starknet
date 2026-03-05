@@ -22,6 +22,28 @@ import { decode } from 'light-bolt11-decoder';
 import InvoiceDecoder from './components/InvoiceDecoder';
 
 const base64ToHex = (base64) => `0x${Buffer.from(base64, 'base64').toString('hex')}`;
+const normalizeHex = (hex) => (hex || '').replace(/^0x/, '').toLowerCase();
+const hexToBase64 = (hex) => {
+  const normalized = normalizeHex(hex);
+  if (!normalized) return '';
+  return Buffer.from(normalized, 'hex').toString('base64');
+};
+const preimageToHex = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const raw = value.startsWith('0x') ? value.slice(2) : value;
+    if (/^[0-9a-fA-F]{64}$/.test(raw)) return raw.toLowerCase();
+    try {
+      return Buffer.from(value, 'base64').toString('hex').toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+  if (value instanceof Uint8Array || Array.isArray(value)) {
+    return Buffer.from(value).toString('hex').toLowerCase();
+  }
+  return '';
+};
 
 const SWAP_AMOUNT_TAP_SATOSHIS = 500;
 // Represents 0.00005 STRK. (STRK has 18 decimals)
@@ -675,27 +697,116 @@ function AppContent() {
     setSwapStatus('Paying invoice via LNC...');
 
     try {
-      const response = await lncClient.lnd.lightning.sendPaymentSync({
-        paymentRequest: effectiveInvoicePaymentRequest,
-        // In test mode we allow paying our own invoice for end-to-end testing.
-        allowSelfPayment: allowSelfAccept,
-      });
+      const invoice = effectiveInvoicePaymentRequest.trim();
 
-      if (response.paymentError) {
-        throw new Error(response.paymentError);
+      // Prefer Taproot Asset channel payment path when this invoice decodes as an asset invoice.
+      let preimageHex = '';
+      const tapChannels = lncClient?.tapd?.tapChannels;
+      let decodedAssetInvoice = null;
+      let paymentAssetIdEncoded = '';
+
+      if (tapChannels?.decodeAssetPayReq && tapChannels?.sendPayment) {
+        const candidateAssetIds = Array.from(
+          new Set([
+            normalizeHex(selectedAsset?.assetId || ''),
+            normalizeHex(FORCED_TAPROOT_ASSET_ID),
+          ].filter(Boolean))
+        );
+
+        for (const assetId of candidateAssetIds) {
+          const assetIdEncodings = [
+            assetId,
+            `0x${assetId}`,
+            hexToBase64(assetId),
+          ].filter(Boolean);
+
+          for (const encodedAssetId of assetIdEncodings) {
+            try {
+              const decoded = await tapChannels.decodeAssetPayReq({
+                assetId: encodedAssetId,
+                payReqString: invoice,
+              });
+              decodedAssetInvoice = decoded;
+              paymentAssetIdEncoded = encodedAssetId;
+              break;
+            } catch {
+              // Try next encoding candidate.
+            }
+          }
+
+          if (decodedAssetInvoice) break;
+        }
       }
 
-      let preimageHex = '';
-      if (typeof response.paymentPreimage === 'string') {
-        const preimageStr = response.paymentPreimage;
-        // Check if base64 or hex. Base64 32 bytes = 44 chars. Hex = 64 chars.
-        if (preimageStr.length === 64 && /^[0-9a-fA-F]+$/.test(preimageStr)) {
-          preimageHex = preimageStr;
-        } else {
-          preimageHex = Buffer.from(preimageStr, 'base64').toString('hex');
+      if (decodedAssetInvoice && paymentAssetIdEncoded && tapChannels?.sendPayment) {
+        setSwapStatus('Paying Taproot Asset invoice via tapd channels...');
+
+        preimageHex = await new Promise((resolve, reject) => {
+          let settled = false;
+          const timeout = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error('Taproot payment timed out.'));
+          }, 120000);
+
+          const finalize = (result, isError = false) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            if (isError) reject(result);
+            else resolve(result);
+          };
+
+          try {
+            tapChannels.sendPayment(
+              {
+                assetId: paymentAssetIdEncoded,
+                paymentRequest: {
+                  paymentRequest: invoice,
+                  allowSelfPayment: allowSelfAccept,
+                },
+                allowOverpay: true,
+              },
+              (msg) => {
+                const payment = msg?.paymentResult;
+                if (!payment) return;
+
+                const paymentError = payment.paymentError || '';
+                if (paymentError) {
+                  finalize(new Error(paymentError), true);
+                  return;
+                }
+
+                const status = (payment.status || '').toString().toUpperCase();
+                if (status.includes('FAILED')) {
+                  finalize(new Error('Taproot payment failed.'), true);
+                  return;
+                }
+
+                const preimage = preimageToHex(payment.paymentPreimage);
+                if (preimage) {
+                  finalize(preimage);
+                }
+              },
+              (streamErr) => {
+                finalize(streamErr instanceof Error ? streamErr : new Error(String(streamErr)), true);
+              },
+            );
+          } catch (sendErr) {
+            finalize(sendErr instanceof Error ? sendErr : new Error(String(sendErr)), true);
+          }
+        });
+      } else {
+        // Fallback path for regular LN invoices.
+        const response = await lncClient.lnd.lightning.sendPaymentSync({
+          paymentRequest: invoice,
+          allowSelfPayment: allowSelfAccept,
+        });
+
+        if (response.paymentError) {
+          throw new Error(response.paymentError);
         }
-      } else if (response.paymentPreimage) {
-        preimageHex = Buffer.from(response.paymentPreimage).toString('hex');
+        preimageHex = preimageToHex(response.paymentPreimage);
       }
 
       if (!preimageHex) {
