@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { Buffer } from 'buffer';
 
 const base64ToHex = (base64) => `0x${Buffer.from(base64, 'base64').toString('hex')}`;
-const DEMO_SELECTED_ASSET_ID = 'f90c557d6c0cc9ff3acfc96212eb7f79c312c54dc5ccfb27835a67ee7f590da4';
-const FORCED_INVOICE_ASSET_ID = 'f90c557d6c0cc9ff3acfc96212eb7f79c312c54dc5ccfb27835a67ee7f590da4';
+const DEMO_SELECTED_ASSET_ID = '9745fa9095b11cf9f626fa71cf482197a2dee1796a2d6f66a9f69d234d3b6a1a';
+const FORCED_INVOICE_ASSET_ID = '9745fa9095b11cf9f626fa71cf482197a2dee1796a2d6f66a9f69d234d3b6a1a';
 const normalizeHex = (hex) => (hex || '').replace(/^0x/, '').toLowerCase();
 const hexToBase64 = (hex) => {
     const normalized = normalizeHex(hex);

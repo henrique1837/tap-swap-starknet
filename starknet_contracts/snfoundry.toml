@@ -14,3 +14,11 @@
 account = "account-1"
 accounts-file = "/home/henrique/.starknet_accounts/starknet_open_zeppelin_accounts.json"
 url = "http://127.0.0.1:5050/"
+
+[sncast.testnet]
+url = "https://starknet-sepolia.public.blastapi.io"
+accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+account = "my_sepolia_account"
+wait-params = { timeout = 300, retry-interval = 10 }
+block-explorer = "Voyager"
+show-explorer-links = true
