@@ -31,12 +31,21 @@ You will need `Node.js` and a package manager (`pnpm` is recommended based on th
    pnpm install
    ```
 
-2. Start the development server:
+2. Configure environment variables for local demo:
+   - Create a `.env` file in this folder (see `.env.example`).
+   - Define `VITE_TAPROOT_ASSET_ID` with the Taproot Asset ID (32-byte hex) that your node uses as the STRK representation in this demo, it can be found at Lightning Polar.
+
+   Example:
+   ```env
+   VITE_TAPROOT_ASSET_ID=9745fa9095b11cf9f626fa71cf482197a2dee1796a2d6f66a9f69d234d3b6a1a
+   ```
+
+3. Start the development server:
    ```bash
    pnpm run dev
    ```
 
-3. Open your browser and navigate to the local URL provided by Vite (typically `http://localhost:5173`).
+4. Open your browser and navigate to the local URL provided by Vite (typically `http://localhost:5173`).
 
 ### Building for Production
 

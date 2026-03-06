@@ -3,15 +3,65 @@ import { decode } from 'light-bolt11-decoder';
 import { Buffer } from 'buffer';
 
 const normalizeHex = (hex) => (hex || '').replace(/^0x/, '').toLowerCase();
-const hexToBase64 = (hex) => {
+const hexToBase64Bytes32 = (hex) => {
     const normalized = normalizeHex(hex);
-    if (!normalized) return '';
+    if (!/^[0-9a-f]{64}$/i.test(normalized)) return '';
     return Buffer.from(normalized, 'hex').toString('base64');
+};
+const toBase64Url = (base64) => (base64 || '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+const toBase64Std = (value) => {
+    const normalized = (value || '').replace(/-/g, '+').replace(/_/g, '/');
+    if (!normalized) return '';
+    return normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+};
+const isValidBytes32Base64 = (value) => {
+    try {
+        return Buffer.from(toBase64Std(value), 'base64').length === 32;
+    } catch {
+        return false;
+    }
+};
+const buildAssetIdEncodingCandidates = (hex) => {
+    const base64Std = hexToBase64Bytes32(hex);
+    if (!base64Std) return [];
+    const base64Url = toBase64Url(base64Std);
+    const base64StdUnpadded = base64Std.replace(/=+$/g, '');
+    return Array.from(new Set([base64Std, base64StdUnpadded, base64Url]))
+        .filter((candidate) => isValidBytes32Base64(candidate));
+};
+const bytesToHex = (value) => {
+    if (!value) return '';
+    if (typeof value === 'string') {
+        const raw = value.startsWith('0x') ? value.slice(2) : value;
+        if (/^[0-9a-fA-F]+$/.test(raw)) return raw.toLowerCase();
+        try {
+            return Buffer.from(value, 'base64').toString('hex').toLowerCase();
+        } catch {
+            return '';
+        }
+    }
+    if (value instanceof Uint8Array || Array.isArray(value)) {
+        return Buffer.from(value).toString('hex').toLowerCase();
+    }
+    if (typeof value === 'object') {
+        const numericValues = Object.keys(value)
+            .filter((key) => /^\d+$/.test(key))
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => value[key]);
+        if (numericValues.length > 0) {
+            return Buffer.from(numericValues).toString('hex').toLowerCase();
+        }
+    }
+    return '';
 };
 
 function InvoiceDecoder({ invoice, title = "Invoice Details", lncClient, assetId }) {
     const [decodedInvoice, setDecodedInvoice] = useState(null);
     const [decodedAssetInvoice, setDecodedAssetInvoice] = useState(null);
+    const [resolvedAssetMetadata, setResolvedAssetMetadata] = useState(null);
     const [error, setError] = useState(null);
 
     useEffect(() => {
@@ -22,6 +72,7 @@ function InvoiceDecoder({ invoice, title = "Invoice Details", lncClient, assetId
                 if (!isMounted) return;
                 setDecodedInvoice(null);
                 setDecodedAssetInvoice(null);
+                setResolvedAssetMetadata(null);
                 setError(null);
                 return;
             }
@@ -37,44 +88,76 @@ function InvoiceDecoder({ invoice, title = "Invoice Details", lncClient, assetId
                 setError('Invalid Lightning invoice format');
                 setDecodedInvoice(null);
                 setDecodedAssetInvoice(null);
+                setResolvedAssetMetadata(null);
                 return;
             }
 
             if (!lncClient?.tapd?.tapChannels?.decodeAssetPayReq) {
                 if (!isMounted) return;
                 setDecodedAssetInvoice(null);
+                setResolvedAssetMetadata(null);
                 return;
             }
-
             const candidateId = normalizeHex(assetId || '');
             if (!candidateId) {
                 if (!isMounted) return;
                 setDecodedAssetInvoice(null);
+                setResolvedAssetMetadata(null);
                 return;
             }
 
-            const assetIdCandidates = [
-                candidateId,
-                `0x${candidateId}`,
-                hexToBase64(candidateId),
-            ].filter(Boolean);
+            const assetIdCandidates = buildAssetIdEncodingCandidates(candidateId);
+            if (assetIdCandidates.length === 0) {
+                if (!isMounted) return;
+                setDecodedAssetInvoice(null);
+                setResolvedAssetMetadata(null);
+                return;
+            }
 
             let parsedAssetInvoice = null;
             for (const encodedAssetId of assetIdCandidates) {
+                console.log(encodedAssetId)
                 try {
                     const response = await lncClient.tapd.tapChannels.decodeAssetPayReq({
                         assetId: encodedAssetId,
                         payReqString: invoice.trim(),
                     });
+                    console.log(response)
                     parsedAssetInvoice = response;
                     break;
                 } catch {
-                    // Try next encoding candidate.
+                    // Try next normalized bytes32 string candidate.
                 }
             }
 
             if (!isMounted) return;
             setDecodedAssetInvoice(parsedAssetInvoice);
+
+            let metadata = null;
+            if (lncClient?.tapd?.taprootAssets?.listAssets) {
+                try {
+                    const listAssetsResponse = await lncClient.tapd.taprootAssets.listAssets({
+                        withWitness: false,
+                        includeLeased: true,
+                        scriptKeyType: { allTypes: true },
+                    });
+                    const matchedAsset = (listAssetsResponse?.assets || []).find((walletAsset) => (
+                        normalizeHex(bytesToHex(walletAsset?.assetGenesis?.assetId)) === candidateId
+                    ));
+                    if (matchedAsset) {
+                        metadata = {
+                            name: matchedAsset?.assetGenesis?.name || null,
+                            assetType: matchedAsset?.assetGenesis?.assetType || null,
+                            scriptKeyType: matchedAsset?.scriptKeyType || null,
+                        };
+                    }
+                } catch (lookupErr) {
+                    console.warn('Unable to resolve Taproot Asset metadata by assetId:', lookupErr);
+                }
+            }
+
+            if (!isMounted) return;
+            setResolvedAssetMetadata(metadata);
         };
 
         decodeInvoice();
@@ -135,9 +218,13 @@ function InvoiceDecoder({ invoice, title = "Invoice Details", lncClient, assetId
     const timestamp = getTagValue(decodedInvoice.sections, 'timestamp');
     const amountMillisats = getTagValue(decodedInvoice.sections, 'amount');
     const assetAmount = decodedAssetInvoice?.assetAmount;
-    const assetName = decodedAssetInvoice?.genesisInfo?.name || 'Taproot Asset';
+    const assetName = resolvedAssetMetadata?.name
+        || decodedAssetInvoice?.genesisInfo?.name
+        || 'Taproot Asset';
+    const assetType = resolvedAssetMetadata?.assetType || decodedAssetInvoice?.genesisInfo?.assetType || '';
+    const scriptKeyType = resolvedAssetMetadata?.scriptKeyType || '';
     const assetDecimals = decodedAssetInvoice?.decimalDisplay?.decimalDisplay;
-    const assetIdHex = normalizeHex(decodedAssetInvoice?.genesisInfo?.assetId || assetId || '');
+    const assetIdHex = bytesToHex(decodedAssetInvoice?.genesisInfo?.assetId) || normalizeHex(assetId || '');
 
     return (
         <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-5 space-y-4">
@@ -151,6 +238,8 @@ function InvoiceDecoder({ invoice, title = "Invoice Details", lncClient, assetId
                     <span className="text-xs text-indigo-700 block mb-1 font-semibold">Taproot Asset Decoded via LNC</span>
                     <div className="text-sm text-indigo-900 space-y-1">
                         <p><span className="font-semibold">Asset:</span> {assetName}</p>
+                        {assetType && <p><span className="font-semibold">Asset Type:</span> {assetType}</p>}
+                        {scriptKeyType && <p><span className="font-semibold">Script Key Type:</span> {scriptKeyType}</p>}
                         <p><span className="font-semibold">Asset Amount:</span> {formatAssetAmount(assetAmount, assetDecimals)}</p>
                         <p><span className="font-semibold">Raw Units:</span> {(assetAmount || '0').toString()}</p>
                         {assetIdHex && (

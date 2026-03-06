@@ -2,13 +2,37 @@ import { useState, useCallback, useEffect } from 'react';
 import { Buffer } from 'buffer';
 
 const base64ToHex = (base64) => `0x${Buffer.from(base64, 'base64').toString('hex')}`;
-const DEMO_SELECTED_ASSET_ID = '9745fa9095b11cf9f626fa71cf482197a2dee1796a2d6f66a9f69d234d3b6a1a';
-const FORCED_INVOICE_ASSET_ID = '9745fa9095b11cf9f626fa71cf482197a2dee1796a2d6f66a9f69d234d3b6a1a';
 const normalizeHex = (hex) => (hex || '').replace(/^0x/, '').toLowerCase();
-const hexToBase64 = (hex) => {
+const CONFIGURED_ASSET_ID = normalizeHex(import.meta.env.VITE_TAPROOT_ASSET_ID || '');
+const FORCED_INVOICE_ASSET_ID = CONFIGURED_ASSET_ID;
+const hexToBase64Bytes32 = (hex) => {
     const normalized = normalizeHex(hex);
-    if (!normalized) return '';
+    if (!/^[0-9a-f]{64}$/i.test(normalized)) return '';
     return Buffer.from(normalized, 'hex').toString('base64');
+};
+const toBase64Url = (base64) => (base64 || '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+const toBase64Std = (value) => {
+    const normalized = (value || '').replace(/-/g, '+').replace(/_/g, '/');
+    if (!normalized) return '';
+    return normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+};
+const isValidBytes32Base64 = (value) => {
+    try {
+        return Buffer.from(toBase64Std(value), 'base64').length === 32;
+    } catch {
+        return false;
+    }
+};
+const buildAssetIdEncodingCandidates = (hex) => {
+    const base64Std = hexToBase64Bytes32(hex);
+    if (!base64Std) return [];
+    const base64Url = toBase64Url(base64Std);
+    const base64StdUnpadded = base64Std.replace(/=+$/g, '');
+    return Array.from(new Set([base64Std, base64StdUnpadded, base64Url]))
+        .filter((candidate) => isValidBytes32Base64(candidate));
 };
 const bytesToHex = (value) => {
     if (!value) return '';
@@ -380,19 +404,15 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                 });
             }
 
-            setAssets(merged);
+            const filteredAssets = CONFIGURED_ASSET_ID
+                ? merged.filter((asset) => normalizeHex(asset.assetId) === CONFIGURED_ASSET_ID)
+                : merged;
+            setAssets(filteredAssets);
 
-            // Demo mode: prefer a specific asset ID, then channel asset, then first asset.
-            if (merged.length > 0) {
-                setSelectedAsset(prev => {
-                    if (prev) return prev; // Do not overwrite if already selected
-                    const demoAsset = merged.find(
-                        (asset) => normalizeHex(asset.assetId) === DEMO_SELECTED_ASSET_ID
-                    );
-                    const channelAsset = merged.find((asset) => asset.inChannels);
-                    return demoAsset || channelAsset || merged[0];
-                });
-            }
+            const configuredAsset = CONFIGURED_ASSET_ID
+                ? filteredAssets.find((asset) => normalizeHex(asset.assetId) === CONFIGURED_ASSET_ID) || null
+                : null;
+            setSelectedAsset(configuredAsset);
         } catch (err) {
             console.error('Error fetching Taproot Assets:', err);
             setError(err.message || 'Failed to fetch Taproot Assets');
@@ -408,18 +428,15 @@ export const useTaprootAssets = (lncClient, isConnected) => {
             throw new Error('Taproot Asset Channels service not available');
         }
 
-        if (!asset) {
-            throw new Error('No asset selected');
-        }
-
         try {
             const assetIdHex = normalizeHex(FORCED_INVOICE_ASSET_ID);
-            const assetIdCandidates = [
-                assetIdHex,            // hex string (preferred)
-                `0x${assetIdHex}`,     // prefixed hex
-                hexToBase64(assetIdHex), // base64 bytes string
-            ].filter(Boolean);
-
+            if (!assetIdHex) {
+                throw new Error('Missing Taproot Asset ID. Set VITE_TAPROOT_ASSET_ID in .env.');
+            }
+            const assetIdCandidates = buildAssetIdEncodingCandidates(assetIdHex);
+            if (assetIdCandidates.length === 0) {
+                throw new Error('Taproot Asset ID must be exactly 32 bytes (64 hex chars).');
+            }
             let lastError = null;
             for (const encodedAssetId of assetIdCandidates) {
                 try {
@@ -427,7 +444,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                         assetId: encodedAssetId,
                         assetAmount: amountSats.toString(),
                         invoiceRequest: {
-                            memo: memo || `Taproot Asset Swap: ${asset.name}`,
+                            memo: memo || `Taproot Asset Swap: ${asset?.name || 'Configured Asset'}`,
                         },
                     };
                     const invoiceResponse = await lncClient.tapd.tapChannels.addInvoice(request);
@@ -443,8 +460,8 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                     return {
                         paymentRequest,
                         paymentHash,
-                        assetId: FORCED_INVOICE_ASSET_ID,
-                        assetName: asset.name,
+                        assetId: assetIdHex,
+                        assetName: asset?.name || 'Configured Asset',
                         assetAmount: amountSats.toString(),
                         isAssetInvoice: true,
                     };
@@ -453,7 +470,6 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                     console.warn(`Taproot invoice failed with assetId encoding "${encodedAssetId.slice(0, 16)}..."`, err);
                 }
             }
-
             throw lastError || new Error('All assetId encodings failed for Taproot Asset invoice.');
         } catch (err) {
             console.error('Error creating Taproot Asset invoice:', err);

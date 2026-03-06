@@ -22,10 +22,34 @@ import InvoiceDecoder from './components/InvoiceDecoder';
 
 const base64ToHex = (base64) => `0x${Buffer.from(base64, 'base64').toString('hex')}`;
 const normalizeHex = (hex) => (hex || '').replace(/^0x/, '').toLowerCase();
-const hexToBase64 = (hex) => {
+const hexToBase64Bytes32 = (hex) => {
   const normalized = normalizeHex(hex);
-  if (!normalized) return '';
+  if (!/^[0-9a-f]{64}$/i.test(normalized)) return '';
   return Buffer.from(normalized, 'hex').toString('base64');
+};
+const toBase64Url = (base64) => (base64 || '')
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/g, '');
+const toBase64Std = (value) => {
+  const normalized = (value || '').replace(/-/g, '+').replace(/_/g, '/');
+  if (!normalized) return '';
+  return normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+};
+const isValidBytes32Base64 = (value) => {
+  try {
+    return Buffer.from(toBase64Std(value), 'base64').length === 32;
+  } catch {
+    return false;
+  }
+};
+const buildAssetIdEncodingCandidates = (hex) => {
+  const base64Std = hexToBase64Bytes32(hex);
+  if (!base64Std) return [];
+  const base64Url = toBase64Url(base64Std);
+  const base64StdUnpadded = base64Std.replace(/=+$/g, '');
+  return Array.from(new Set([base64Std, base64StdUnpadded, base64Url]))
+    .filter((candidate) => isValidBytes32Base64(candidate));
 };
 const preimageToHex = (value) => {
   if (!value) return '';
@@ -147,12 +171,8 @@ const shortenHex = (value, size = SHORT_KEY_SIZE) => {
 
 const STARKSCAN_SEPOLIA_TX_PREFIX = 'https://sepolia.voyager.online/tx/';
 
-
-
 // Taproot Assets Configuration
-const DEMO_MODE = true; // Set to false in production
-const PRODUCTION_ASSET_NAME = 'TAPROOT_STRK'; // The asset to use in production
-const FORCED_TAPROOT_ASSET_ID = 'f90c557d6c0cc9ff3acfc96212eb7f79c312c54dc5ccfb27835a67ee7f590da4';
+const CONFIG_TAPROOT_ASSET_ID = normalizeHex(import.meta.env.VITE_TAPROOT_ASSET_ID || '');
 
 function AppContent() {
   const { address, account, isConnected, connector, chainId } = useAccount();
@@ -848,20 +868,10 @@ function AppContent() {
       let paymentAssetIdEncoded = '';
 
       if (tapChannels?.decodeAssetPayReq && tapChannels?.sendPayment) {
-        const candidateAssetIds = Array.from(
-          new Set([
-            normalizeHex(selectedAsset?.assetId || ''),
-            normalizeHex(FORCED_TAPROOT_ASSET_ID),
-          ].filter(Boolean))
-        );
+        const candidateAssetIds = CONFIG_TAPROOT_ASSET_ID ? [CONFIG_TAPROOT_ASSET_ID] : [];
 
         for (const assetId of candidateAssetIds) {
-          const assetIdEncodings = [
-            assetId,
-            `0x${assetId}`,
-            hexToBase64(assetId),
-          ].filter(Boolean);
-
+          const assetIdEncodings = buildAssetIdEncodingCandidates(assetId);
           for (const encodedAssetId of assetIdEncodings) {
             try {
               const decoded = await tapChannels.decodeAssetPayReq({
@@ -872,7 +882,7 @@ function AppContent() {
               paymentAssetIdEncoded = encodedAssetId;
               break;
             } catch {
-              // Try next encoding candidate.
+              // Try next candidate encoding.
             }
           }
 
@@ -1798,7 +1808,7 @@ function AppContent() {
                                     invoice={row.paymentRequest}
                                     title="Invoice Snapshot"
                                     lncClient={lncClient}
-                                    assetId={FORCED_TAPROOT_ASSET_ID}
+                                    assetId={CONFIG_TAPROOT_ASSET_ID}
                                   />
                                 </div>
                               </details>
@@ -1966,7 +1976,7 @@ function AppContent() {
                               invoice={effectiveInvoicePaymentRequest}
                               title="Published Invoice (Taproot/Lightning)"
                               lncClient={lncClient}
-                              assetId={FORCED_TAPROOT_ASSET_ID}
+                              assetId={CONFIG_TAPROOT_ASSET_ID}
                             />
                           ) : (
                             <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-medium">
@@ -2054,7 +2064,7 @@ function AppContent() {
                                     invoice={effectiveInvoicePaymentRequest}
                                     title="LNC Invoice Details"
                                     lncClient={lncClient}
-                                    assetId={FORCED_TAPROOT_ASSET_ID}
+                                    assetId={CONFIG_TAPROOT_ASSET_ID}
                                   />
                                 </div>
                               )}
@@ -2091,7 +2101,7 @@ function AppContent() {
                                     invoice={manualInvoice}
                                     title="Pasted Invoice Details"
                                     lncClient={lncClient}
-                                    assetId={FORCED_TAPROOT_ASSET_ID}
+                                    assetId={CONFIG_TAPROOT_ASSET_ID}
                                   />
                                 </div>
                               )}
@@ -2248,7 +2258,7 @@ function AppContent() {
                               invoice={effectiveInvoicePaymentRequest}
                               title="Found Invoice on Nostr"
                               lncClient={lncClient}
-                              assetId={FORCED_TAPROOT_ASSET_ID}
+                              assetId={CONFIG_TAPROOT_ASSET_ID}
                             />
 
                             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-inner space-y-4">
