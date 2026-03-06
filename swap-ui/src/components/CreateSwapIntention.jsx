@@ -9,6 +9,17 @@ function CreateSwapIntention({
   wantedAsset,
   setWantedAsset,
 }) {
+  // Convert Wei string to a human-readable STRK amount (18 decimals)
+  const strkDisplay = (() => {
+    try {
+      const wei = BigInt(swapAmountSTRK);
+      const whole = wei / 10n ** 18n;
+      const frac = wei % 10n ** 18n;
+      if (frac === 0n) return `${whole}`;
+      const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
+      return `${whole}.${fracStr}`;
+    } catch { return swapAmountSTRK; }
+  })();
   return (
     <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl border border-white/50 w-full max-w-2xl mt-8 transition-all hover:shadow-2xl">
       <div className="flex items-center gap-3 mb-6">
@@ -22,14 +33,41 @@ function CreateSwapIntention({
       </div>
 
       <div className="mb-6 p-5 bg-gradient-to-r from-slate-50 to-indigo-50/30 rounded-2xl border border-indigo-100/50">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Offer</span>
-          <span className="text-lg font-bold text-slate-800">{swapAmountSTRK} STRK <span className="text-xs text-slate-400 font-normal">(Wei/Fri)</span></span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Request</span>
-          <span className="text-lg font-bold text-emerald-600">{SWAP_AMOUNT_TAP_SATOSHIS} Sats <span className="text-xs text-slate-400 font-normal">(Taproot Eqv.)</span></span>
-        </div>
+        {wantedAsset === 'TAPROOT_STRK' ? (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Offer</span>
+              <div className="text-right">
+                <span className="text-lg font-bold text-slate-800">{strkDisplay} STRK</span>
+                <p className="text-[10px] text-slate-400">{swapAmountSTRK} Wei</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Request</span>
+              <div className="text-right">
+                <span className="text-lg font-bold text-amber-600">{SWAP_AMOUNT_TAP_SATOSHIS} units</span>
+                <p className="text-[10px] text-slate-400">Taproot STRK asset</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Offer</span>
+              <div className="text-right">
+                <span className="text-lg font-bold text-emerald-600">{SWAP_AMOUNT_TAP_SATOSHIS} units</span>
+                <p className="text-[10px] text-slate-400">Taproot asset</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">You Request</span>
+              <div className="text-right">
+                <span className="text-lg font-bold text-slate-800">{strkDisplay} STRK</span>
+                <p className="text-[10px] text-slate-400">{swapAmountSTRK} Wei</p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="mb-8">

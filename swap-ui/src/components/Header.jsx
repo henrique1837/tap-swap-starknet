@@ -13,8 +13,8 @@ function Header({
 
     const StatusDot = ({ connected, label }) => (
         <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-            <span className="text-sm font-medium text-gray-700">{label}</span>
+            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)] animate-pulse' : 'bg-rose-500'}`}></div>
+            <span className="text-sm font-medium text-slate-300">{label}</span>
         </div>
     );
 

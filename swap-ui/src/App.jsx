@@ -145,7 +145,7 @@ const shortenHex = (value, size = SHORT_KEY_SIZE) => {
   return `${value.slice(0, size)}...${value.slice(-size)}`;
 };
 
-const STARKSCAN_SEPOLIA_TX_PREFIX = 'https://sepolia.starkscan.co/tx/';
+const STARKSCAN_SEPOLIA_TX_PREFIX = 'https://sepolia.voyager.online/tx/';
 
 
 
@@ -560,24 +560,24 @@ function AppContent() {
     ? 'Select an intention first.'
     : isLockAlreadyDone
       ? 'STRK is already locked or finalized for this intention.'
-    : !isWalletConnected || !activeStarknetAddress
-      ? 'Connect your Starknet wallet first.'
-    : !isSelectedAccepted
-        ? 'This intention must be accepted first.'
-        : !effectiveInvoicePaymentHash
-          ? 'Generate invoice first. It will be published only after lock.'
-          : !isLockerRoleMatch
-            ? (isWantsStrk
-              ? 'For wants STRK, only accepter locks STRK.'
-              : 'For wants Taproot STRK, only poster locks STRK.')
-            : '';
+      : !isWalletConnected || !activeStarknetAddress
+        ? 'Connect your Starknet wallet first.'
+        : !isSelectedAccepted
+          ? 'This intention must be accepted first.'
+          : !effectiveInvoicePaymentHash
+            ? 'Generate invoice first. It will be published only after lock.'
+            : !isLockerRoleMatch
+              ? (isWantsStrk
+                ? 'For wants STRK, only accepter locks STRK.'
+                : 'For wants Taproot STRK, only poster locks STRK.')
+              : '';
 
   // Auto move between tabs removed to prevent conflicts with Claim tab.
   // Tab switching is now handled explicitly in onSelect handlers.
 
   const tabClass = (key) => `flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all duration-300 text-center flex items-center justify-center gap-2 ${activeTab === key
     ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
-    : 'text-slate-600 hover:bg-white/50 hover:text-indigo-600'
+    : 'text-slate-300 hover:bg-white/10 hover:text-white'
     }`;
 
   // ...
@@ -1402,8 +1402,18 @@ function AppContent() {
     }
   }, [activeTab, refreshFinalizeLists]);
 
+  const statusPillClass = (status) => {
+    if (status === 'open') return 'bg-emerald-500 text-white';
+    if (status === 'accepted') return 'bg-blue-500 text-white';
+    if (status === 'invoice_ready') return 'bg-violet-600 text-white';
+    if (status === 'locked') return 'bg-purple-600 text-white';
+    if (status === 'claimed') return 'bg-teal-600 text-white';
+    if (status === 'refunded') return 'bg-orange-500 text-white';
+    return 'bg-slate-500 text-white';
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
       {/* Header */}
       <Header
         lncIsConnected={lncIsConnected}
@@ -1470,37 +1480,37 @@ function AppContent() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col items-center gap-6">
           {errorMessage && (
-            <div className="fixed bottom-4 right-4 z-50 bg-red-600 text-white px-6 py-3 rounded-2xl shadow-2xl animate-bounce flex items-center gap-3 max-w-md">
-              <span className="text-xl">⚠️</span>
-              <p className="font-bold text-sm">{errorMessage}</p>
-              <button onClick={() => setErrorMessage('')} className="ml-2 hover:text-red-200">✕</button>
+            <div className="fixed bottom-4 right-4 z-50 bg-rose-950/95 border border-rose-500/50 text-rose-200 px-5 py-3.5 rounded-2xl shadow-2xl backdrop-blur-xl flex items-center gap-3 max-w-md">
+              <span className="text-rose-400 text-lg flex-shrink-0">⚠️</span>
+              <p className="font-semibold text-sm leading-snug">{errorMessage}</p>
+              <button onClick={() => setErrorMessage('')} className="ml-auto text-rose-400 hover:text-rose-200 transition-colors flex-shrink-0">✕</button>
             </div>
           )}
 
           {connectionSuccess && (
-            <div className="fixed top-20 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-2xl shadow-xl animate-fade-in-down flex items-center gap-3 border-2 border-green-400">
-              <span className="text-xl">✅</span>
-              <p className="font-bold text-sm">Wallet Connected Successfully!</p>
-              <button onClick={() => setConnectionSuccess(false)} className="ml-2 hover:text-green-200">✕</button>
+            <div className="fixed top-20 right-4 z-50 bg-emerald-950/95 border border-emerald-500/50 text-emerald-200 px-5 py-3.5 rounded-2xl shadow-xl backdrop-blur-xl flex items-center gap-3">
+              <span className="text-emerald-400 text-lg">✅</span>
+              <p className="font-semibold text-sm">Wallet Connected Successfully!</p>
+              <button onClick={() => setConnectionSuccess(false)} className="ml-2 text-emerald-400 hover:text-emerald-200 transition-colors">✕</button>
             </div>
           )}
 
           <div className="w-full max-w-2xl mb-8 mt-4">
-            <div className="flex gap-2 p-1.5 bg-slate-200/50 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-inner">
+            <div className="flex gap-2 p-1.5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 shadow-inner">
               <button className={tabClass('create')} onClick={() => setActiveTab('create')}>
-                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                <span className="bg-indigo-500/20 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">1</span>
                 Create
               </button>
               <button className={tabClass('market')} onClick={() => setActiveTab('market')}>
-                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                <span className="bg-indigo-500/20 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">2</span>
                 Market
               </button>
               <button className={tabClass('finalize')} onClick={() => setActiveTab('finalize')}>
-                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
+                <span className="bg-indigo-500/20 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">3</span>
                 Finalize
               </button>
               <button className={tabClass('claimed')} onClick={() => setActiveTab('claimed')}>
-                <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
+                <span className="bg-indigo-500/20 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">4</span>
                 Claimed
               </button>
             </div>
@@ -1564,53 +1574,53 @@ function AppContent() {
               </div>
 
               {finalizeView === 'select' && (
-              <div className="bg-white/80 backdrop-blur-lg p-6 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-800">My Finalization Queue</h3>
-                    <p className="text-sm text-slate-500">Orders you created or accepted. Continue based on your role.</p>
+                <div className="bg-white/80 backdrop-blur-lg p-6 rounded-3xl shadow-xl w-full max-w-2xl mt-4 border border-white/50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800">My Finalization Queue</h3>
+                      <p className="text-sm text-slate-500">Orders you created or accepted. Continue based on your role.</p>
+                    </div>
+                    <button
+                      onClick={refreshFinalizeLists}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                      disabled={isLoadingFinalizeIntentions}
+                    >
+                      {isLoadingFinalizeIntentions ? 'Refreshing...' : 'Refresh'}
+                    </button>
                   </div>
-                  <button
-                    onClick={refreshFinalizeLists}
-                    className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
-                    disabled={isLoadingFinalizeIntentions}
-                  >
-                    {isLoadingFinalizeIntentions ? 'Refreshing...' : 'Refresh'}
-                  </button>
-                </div>
 
-                {!nostrPubkey ? (
-                  <p className="text-sm text-slate-500">Connect LNC to load your finalize queue.</p>
-                ) : finalizeIntentions.length === 0 ? (
-                  <p className="text-sm text-slate-500">No active intentions to finalize.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {finalizeIntentions.map((item) => {
-                      const isSelected = selectedSwapIntention?.dTag === item.dTag;
-                      return (
-                        <button
-                          key={item.dTag || item.id}
-                          onClick={() => {
-                            setSelectedSwapIntention(item);
-                            if (item.paymentRequest) setInvoicePaymentRequest(item.paymentRequest);
-                            if (item.paymentHash) setInvoicePaymentHash(item.paymentHash);
-                            setFinalizeView('flow');
-                          }}
-                          className={`w-full text-left p-4 rounded-2xl border transition-all ${isSelected
-                            ? 'border-indigo-400 bg-indigo-50/60'
-                            : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-bold text-slate-800">{(item.dTag || item.id || '').slice(0, 12)}...</p>
-                            <span className="text-[10px] uppercase font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600">{item.status}</span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">Wanted: {item.wantedAsset || 'STRK'} • Amount: {item.amountSTRK} STRK</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                  {!nostrPubkey ? (
+                    <p className="text-sm text-slate-500">Connect LNC to load your finalize queue.</p>
+                  ) : finalizeIntentions.length === 0 ? (
+                    <p className="text-sm text-slate-500">No active intentions to finalize.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {finalizeIntentions.map((item) => {
+                        const isSelected = selectedSwapIntention?.dTag === item.dTag;
+                        return (
+                          <button
+                            key={item.dTag || item.id}
+                            onClick={() => {
+                              setSelectedSwapIntention(item);
+                              if (item.paymentRequest) setInvoicePaymentRequest(item.paymentRequest);
+                              if (item.paymentHash) setInvoicePaymentHash(item.paymentHash);
+                              setFinalizeView('flow');
+                            }}
+                            className={`w-full text-left p-4 rounded-2xl border transition-all ${isSelected
+                              ? 'border-indigo-400 bg-indigo-50/60 ring-1 ring-indigo-200'
+                              : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-bold text-slate-800">{(item.dTag || item.id || '').slice(0, 12)}...</p>
+                              <span className={`text-[10px] uppercase font-bold px-2.5 py-1 rounded-full ${statusPillClass(item.status)}`}>{item.status}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">Wanted: {item.wantedAsset || 'STRK'} • Amount: {item.amountSTRK} STRK</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
 
               {finalizeView === 'flow' && !selectedSwapIntention && (
@@ -1628,63 +1638,143 @@ function AppContent() {
 
               {finalizeView === 'invoices' && (
                 <div className="bg-white/80 backdrop-blur-lg p-6 rounded-3xl shadow-xl w-full max-w-5xl mt-4 border border-white/50">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-6">
                     <div>
                       <h3 className="text-xl font-bold text-slate-800">Invoice Activity</h3>
-                      <p className="text-sm text-slate-500">Invoices paid/received for intentions you participated in.</p>
+                      <p className="text-sm text-slate-500 mt-0.5">Payments sent and received for your swap intentions.</p>
                     </div>
                     <button
                       onClick={refreshFinalizeLists}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                       disabled={isLoadingFinalizeIntentions}
                     >
+                      <svg className={`w-3.5 h-3.5 ${isLoadingFinalizeIntentions ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                       {isLoadingFinalizeIntentions ? 'Refreshing...' : 'Refresh'}
                     </button>
                   </div>
 
                   {finalizeInvoiceRows.length === 0 ? (
-                    <p className="text-sm text-slate-500">No invoice activity found yet for your swap intentions.</p>
+                    <div className="text-center py-12 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                      <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      <p className="text-sm font-medium text-slate-500">No invoice activity yet</p>
+                      <p className="text-xs text-slate-400 mt-1">Records appear here once an intention reaches payment stage.</p>
+                    </div>
                   ) : (
                     <div className="space-y-4">
                       {finalizeInvoiceRows.map((row) => (
-                        <div key={row.dTag || row.id} className="p-5 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-bold text-slate-800">{(row.dTag || row.id || '').slice(0, 14)}...</p>
-                              <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${row.activityTone}`}>{row.activityLabel}</span>
-                              <span className="text-[10px] uppercase font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600">{row.status}</span>
+                        <div key={row.dTag || row.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                          {/* ── Card Header ── */}
+                          <div className={`flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 ${row.activityLabel === 'Received' ? 'bg-emerald-50/70' :
+                            row.activityLabel === 'Paid' ? 'bg-blue-50/70' :
+                              row.activityLabel === 'Ready to Pay' ? 'bg-violet-50/60' : 'bg-amber-50/50'
+                            }`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${row.activityLabel === 'Received' ? 'bg-emerald-100' :
+                                row.activityLabel === 'Paid' ? 'bg-blue-100' :
+                                  row.activityLabel === 'Ready to Pay' ? 'bg-violet-100' : 'bg-amber-100'
+                                }`}>
+                                {row.activityLabel === 'Received' ? '⬇️' :
+                                  row.activityLabel === 'Paid' ? '⬆️' :
+                                    row.activityLabel === 'Ready to Pay' ? '💸' : '⏳'}
+                              </div>
+                              <div>
+                                <p className="text-xs font-mono text-slate-600 font-semibold">{(row.dTag || row.id || '').slice(0, 20)}...</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">{formatUnixTime(row.sortTime)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[11px] uppercase font-bold px-3 py-1 rounded-full ${row.activityTone}`}>{row.activityLabel}</span>
+                              <span className={`text-[11px] uppercase font-bold px-3 py-1 rounded-full ${statusPillClass(row.status)}`}>{row.status}</span>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
-                            <p><span className="font-semibold text-slate-700">Wanted:</span> {row.wantedAsset || 'STRK'} • {row.amountSTRK} STRK • {row.amountSats} sats</p>
-                            <p><span className="font-semibold text-slate-700">Counterparty:</span> <span className="font-mono">{shortenHex(row.counterpartyPubkey)}</span></p>
-                            <p><span className="font-semibold text-slate-700">Counterparty Starknet:</span> <span className="font-mono break-all">{row.counterpartyStarknet || 'Not available'}</span></p>
-                            <p><span className="font-semibold text-slate-700">Invoice Published:</span> {formatUnixTime(row.invoicePublishedAt)}</p>
-                            <p><span className="font-semibold text-slate-700">Claimed At:</span> {formatUnixTime(row.claimedAt)}</p>
-                            <p><span className="font-semibold text-slate-700">Timelock:</span> {row.timelock ? `${formatUnixTime(row.timelock)} (${formatRemainingTime(row.timelock)})` : 'Not available'}</p>
-                          </div>
-
-                          <div className="grid grid-cols-1 gap-2 mb-3 text-xs">
-                            <p><span className="font-semibold text-slate-700">Payment Hash:</span> <span className="font-mono break-all">{row.paymentHash || 'Not available'}</span></p>
-                            <p><span className="font-semibold text-slate-700">Lock Tx:</span> <span className="font-mono break-all">{row.lockTxHash || 'Not available'}</span></p>
-                            <p><span className="font-semibold text-slate-700">Claim Tx:</span> <span className="font-mono break-all">{row.claimTxHash || 'Not available'}</span></p>
-                          </div>
-
-                          {row.paymentRequest && (
-                            <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                              <summary className="cursor-pointer text-sm font-semibold text-slate-700">Decode Invoice Details</summary>
-                              <div className="mt-3">
-                                <InvoiceDecoder
-                                  key={`invoice-feed-${row.dTag || row.id}`}
-                                  invoice={row.paymentRequest}
-                                  title="Invoice Snapshot"
-                                  lncClient={lncClient}
-                                  assetId={FORCED_TAPROOT_ASSET_ID}
-                                />
+                          <div className="p-5 space-y-4">
+                            {/* ── Trade Summary ── */}
+                            <div className="grid grid-cols-3 gap-2 p-4 bg-slate-50 rounded-xl border border-slate-100 text-center">
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">STRK</p>
+                                <p className="text-sm font-bold text-indigo-700">{row.amountSTRK}</p>
                               </div>
-                            </details>
-                          )}
+                              <div className="flex items-center justify-center">
+                                <span className="text-slate-300 text-2xl">⇄</span>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Sats</p>
+                                <p className="text-sm font-bold text-emerald-700">{row.amountSats}</p>
+                              </div>
+                            </div>
+
+                            {/* ── Counterparty ── */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="p-3 rounded-xl border border-slate-100 bg-slate-50">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Counterparty (Nostr)</p>
+                                <p className="text-xs font-mono text-slate-700">{shortenHex(row.counterpartyPubkey)}</p>
+                              </div>
+                              <div className="p-3 rounded-xl border border-slate-100 bg-slate-50">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Counterparty (Starknet)</p>
+                                <p className="text-xs font-mono text-slate-700">{row.counterpartyStarknet ? shortenHex(row.counterpartyStarknet) : '—'}</p>
+                              </div>
+                            </div>
+
+                            {/* ── Timeline chips ── */}
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { label: 'Invoice Published', value: formatUnixTime(row.invoicePublishedAt) },
+                                { label: 'Claimed At', value: formatUnixTime(row.claimedAt) },
+                                { label: 'Timelock', value: row.timelock ? formatRemainingTime(row.timelock) : '—' },
+                              ].map(({ label, value }) => (
+                                <div key={label} className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 text-center">
+                                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+                                  <p className="text-[11px] font-semibold text-slate-700">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* ── On-chain data ── */}
+                            <div className="space-y-2">
+                              {[
+                                { label: 'Payment Hash', value: row.paymentHash, link: null },
+                                { label: 'Lock Tx', value: row.lockTxHash, link: row.lockTxHash ? `${STARKSCAN_SEPOLIA_TX_PREFIX}${row.lockTxHash}` : null },
+                                { label: 'Claim Tx', value: row.claimTxHash, link: row.claimTxHash ? `${STARKSCAN_SEPOLIA_TX_PREFIX}${row.claimTxHash}` : null },
+                              ].map(({ label, value, link }) => value ? (
+                                <div key={label} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 w-24 flex-shrink-0 pt-0.5">{label}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-mono text-slate-700 break-all leading-relaxed">{value}</p>
+                                    {link && (
+                                      <a href={link} target="_blank" rel="noreferrer"
+                                        className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">
+                                        View on Starkscan
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null)}
+                            </div>
+
+                            {/* ── Invoice decoder ── */}
+                            {row.paymentRequest && (
+                              <details className="group">
+                                <summary className="cursor-pointer select-none list-none flex items-center justify-between p-3.5 bg-indigo-50 hover:bg-indigo-100/80 rounded-xl border border-indigo-100/80 transition-colors">
+                                  <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                    <span className="text-sm font-bold text-indigo-700">Decode Invoice</span>
+                                  </div>
+                                  <svg className="w-4 h-4 text-indigo-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                </summary>
+                                <div className="mt-3">
+                                  <InvoiceDecoder
+                                    key={`invoice-feed-${row.dTag || row.id}`}
+                                    invoice={row.paymentRequest}
+                                    title="Invoice Snapshot"
+                                    lncClient={lncClient}
+                                    assetId={FORCED_TAPROOT_ASSET_ID}
+                                  />
+                                </div>
+                              </details>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2292,18 +2382,71 @@ function AppContent() {
               </div>
 
               {claimedIntentions.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  {nostrPubkey ? 'No claimed intentions found for your swaps.' : 'No claimed intentions found.'}
-                </p>
+                <div className="text-center py-12 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-sm font-medium text-slate-500">
+                    {nostrPubkey ? 'No claimed intentions found for your swaps.' : 'No claimed intentions found.'}
+                  </p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {claimedIntentions.map((item) => (
-                    <div key={item.dTag || item.id} className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/60">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-bold text-emerald-900 truncate">{(item.dTag || item.id || '').slice(0, 24)}...</p>
-                        <span className="text-[10px] uppercase font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">claimed</span>
+                    <div key={item.dTag || item.id} className="rounded-2xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-emerald-50 border-b border-emerald-100">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xl">✅</span>
+                          <p className="text-xs font-mono text-emerald-800 font-semibold">{(item.dTag || item.id || '').slice(0, 18)}...</p>
+                        </div>
+                        <span className="text-[11px] uppercase font-bold px-3 py-1 rounded-full bg-teal-600 text-white">Claimed</span>
                       </div>
-                      <p className="text-xs text-emerald-800/80 mt-1">Wanted: {item.wantedAsset || 'STRK'} • Amount: {item.amountSTRK} STRK • Sats: {item.amountSats}</p>
+                      <div className="p-4 space-y-3">
+                        <div className="grid grid-cols-3 gap-2 p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-center">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">STRK</p>
+                            <p className="text-sm font-bold text-indigo-700">{item.amountSTRK}</p>
+                          </div>
+                          <div className="flex items-center justify-center">
+                            <span className="text-slate-300 text-xl">⇄</span>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Sats</p>
+                            <p className="text-sm font-bold text-emerald-700">{item.amountSats}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { label: 'Wanted Asset', value: item.wantedAsset || 'STRK' },
+                            { label: 'Claimed At', value: formatUnixTime(item.claimedAt) },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">{label}</p>
+                              <p className="text-xs font-semibold text-slate-700">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="space-y-1.5">
+                          {item.lockTxHash && (
+                            <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                              <span className="text-[10px] font-bold uppercase text-slate-400">Lock Tx</span>
+                              <a href={`${STARKSCAN_SEPOLIA_TX_PREFIX}${item.lockTxHash}`} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">
+                                {item.lockTxHash.slice(0, 12)}...
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              </a>
+                            </div>
+                          )}
+                          {item.claimTxHash && (
+                            <div className="flex items-center justify-between p-2.5 bg-emerald-50 rounded-xl border border-emerald-100">
+                              <span className="text-[10px] font-bold uppercase text-emerald-600">Claim Tx</span>
+                              <a href={`${STARKSCAN_SEPOLIA_TX_PREFIX}${item.claimTxHash}`} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 transition-colors">
+                                {item.claimTxHash.slice(0, 12)}...
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2312,12 +2455,12 @@ function AppContent() {
           )}
 
           <div className="w-full max-w-4xl mt-12 mb-4">
-            <div className="bg-indigo-900/5 backdrop-blur-sm border border-indigo-900/10 rounded-2xl p-5 flex items-center justify-between shadow-inner">
+            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 flex items-center justify-between shadow-inner">
               <div className="flex items-center gap-3">
-                <div className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></div>
-                <span className="text-xs font-bold text-indigo-900/60 uppercase tracking-widest">System Status</span>
+                <div className="h-2 w-2 rounded-full bg-indigo-400 animate-pulse"></div>
+                <span className="text-xs font-bold text-indigo-300/80 uppercase tracking-widest">System Status</span>
               </div>
-              <div className="text-sm font-medium text-indigo-900/80 truncate max-w-2xl px-4">
+              <div className="text-sm font-medium text-slate-300/90 truncate max-w-2xl px-4">
                 {swapStatus || 'Standing by...'}
               </div>
             </div>

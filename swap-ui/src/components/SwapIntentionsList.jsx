@@ -2,14 +2,28 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNostr } from '../contexts/NostrContext';
 import { nip19 } from 'nostr-tools';
 
-const statusClass = (status) => {
-  if (status === 'invoice_ready') return 'text-emerald-600';
-  if (status === 'accepted') return 'text-blue-600';
-  if (status === 'open') return 'text-green-600';
-  return 'text-gray-500';
+const statusBadge = (status) => {
+  if (status === 'open') return 'bg-emerald-500 text-white';
+  if (status === 'accepted') return 'bg-blue-500 text-white';
+  if (status === 'invoice_ready') return 'bg-violet-600 text-white';
+  if (status === 'locked') return 'bg-purple-600 text-white';
+  if (status === 'claimed') return 'bg-teal-600 text-white';
+  if (status === 'refunded') return 'bg-orange-500 text-white';
+  return 'bg-slate-400 text-white';
 };
 
 const SimpleSwapIntentionCard = ({ intention, onAccept, canAccept }) => {
+  // Format Wei → human-readable STRK (18 decimals)
+  const strkDisplay = (() => {
+    try {
+      const wei = BigInt(intention.amountSTRK);
+      const whole = wei / 10n ** 18n;
+      const frac = wei % 10n ** 18n;
+      if (frac === 0n) return `${whole}`;
+      const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
+      return `${whole}.${fracStr}`;
+    } catch { return intention.amountSTRK; }
+  })();
   const npub = nip19.npubEncode(intention.pubkey || intention.posterPubkey);
 
   return (
@@ -29,14 +43,41 @@ const SimpleSwapIntentionCard = ({ intention, onAccept, canAccept }) => {
       </div>
 
       <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 mb-4">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs font-bold tracking-wider text-slate-400 uppercase">Offering</span>
-          <span className="text-sm font-bold text-slate-800">{intention.amountSTRK} STRK</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-bold tracking-wider text-slate-400 uppercase">Requesting</span>
-          <span className="text-sm font-bold text-emerald-600">{intention.amountSats} Sats</span>
-        </div>
+        {(intention.wantedAsset === 'TAPROOT_STRK' || !intention.wantedAsset) ? (
+          <>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold tracking-wider text-slate-400 uppercase">Offering</span>
+              <div className="text-right">
+                <span className="text-sm font-bold text-slate-800">{strkDisplay} STRK</span>
+                <p className="text-[10px] text-slate-400">{intention.amountSTRK} Wei</p>
+              </div>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold tracking-wider text-slate-400 uppercase">Requesting</span>
+              <div className="text-right">
+                <span className="text-sm font-bold text-amber-600">{intention.amountSats} units</span>
+                <p className="text-[10px] text-slate-400">Taproot STRK</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold tracking-wider text-slate-400 uppercase">Offering</span>
+              <div className="text-right">
+                <span className="text-sm font-bold text-emerald-600">{intention.amountSats} units</span>
+                <p className="text-[10px] text-slate-400">Taproot asset</p>
+              </div>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold tracking-wider text-slate-400 uppercase">Requesting</span>
+              <div className="text-right">
+                <span className="text-sm font-bold text-slate-800">{strkDisplay} STRK</span>
+                <p className="text-[10px] text-slate-400">{intention.amountSTRK} Wei</p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex flex-col gap-2 mb-4">
@@ -47,7 +88,7 @@ const SimpleSwapIntentionCard = ({ intention, onAccept, canAccept }) => {
 
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-500 font-medium">Status:</span>
-          <span className={`font-bold px-2 py-0.5 rounded ${statusClass(intention.status)} bg-opacity-10 bg-current`}>
+          <span className={`font-bold px-2.5 py-1 rounded-full text-[11px] uppercase tracking-wide ${statusBadge(intention.status || 'open')}`}>
             {intention.status || 'open'}
           </span>
         </div>

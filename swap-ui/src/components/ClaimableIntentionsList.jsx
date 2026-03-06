@@ -8,11 +8,14 @@ const normalizeWantedAsset = (value) => {
     return normalized === 'TAPROOT_STRK' ? 'TAPROOT_STRK' : 'STRK';
 };
 
-const statusClass = (status) => {
-    if (status === 'invoice_ready') return 'text-emerald-600';
-    if (status === 'locked') return 'text-purple-600';
-    if (status === 'claimed') return 'text-blue-600';
-    return 'text-gray-500';
+const statusBadge = (status) => {
+    if (status === 'open') return 'bg-emerald-500 text-white';
+    if (status === 'accepted') return 'bg-blue-500 text-white';
+    if (status === 'invoice_ready') return 'bg-violet-600 text-white';
+    if (status === 'locked') return 'bg-purple-600 text-white';
+    if (status === 'claimed') return 'bg-teal-600 text-white';
+    if (status === 'refunded') return 'bg-orange-500 text-white';
+    return 'bg-slate-400 text-white';
 };
 
 const ClaimableIntentionCard = ({ intention, onSelect, isSelected }) => {
@@ -63,7 +66,7 @@ const ClaimableIntentionCard = ({ intention, onSelect, isSelected }) => {
 
             <div className="flex items-center justify-between text-xs mb-4">
                 <span className="text-slate-500 font-medium">Status:</span>
-                <span className={`font-bold px-2 py-0.5 rounded ${statusClass(intention.status)} bg-opacity-10 bg-current`}>
+                <span className={`font-bold px-2.5 py-1 rounded-full text-[11px] uppercase tracking-wide ${statusBadge(intention.status)}`}>
                     {intention.status}
                 </span>
             </div>
