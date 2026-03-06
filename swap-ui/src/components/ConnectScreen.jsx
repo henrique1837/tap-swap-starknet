@@ -238,14 +238,14 @@ function ConnectScreen({
                       </div>
                     </>
                   ) : (
-                    <div className="text-center p-6 bg-white/5 rounded-xl border border-white/5">
-                      <div className="text-4xl mb-3 opacity-50 grayscale">🦊</div>
-                      <p className="text-sm text-slate-300 font-medium mb-2">No Wallet Detected</p>
-                      <p className="text-xs text-slate-500">Please install Braavos or Argent X to continue.</p>
-                    </div>
-                  )}
-                </div>
-              )}
+                      <div className="text-center p-6 bg-white/5 rounded-xl border border-white/5">
+                        <div className="text-4xl mb-3 opacity-50 grayscale">🦊</div>
+                        <p className="text-sm text-slate-300 font-medium mb-2">No Wallet Detected</p>
+                        <p className="text-xs text-slate-500">Please install Braavos to continue.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               {connectionErrorWallet && (
                 <div className="mt-5 p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl">
                   <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">Wallet Error</p>

@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@lightninglabs/lnc-web": "0.3.5-alpha",
-    "@starknet-io/get-starknet-core": "^4.0.8",
     "@starknet-react/chains": "^5.0.3",
     "@starknet-react/core": "^5.0.3",
     "@tailwindcss/vite": "^4.1.18",

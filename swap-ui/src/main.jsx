@@ -18,7 +18,7 @@ import App from './App.jsx';
 import './index.css';
 
 // Starknet React Imports
-import { StarknetConfig, voyager, argent, braavos, useInjectedConnectors, jsonRpcProvider } from '@starknet-react/core';
+import { StarknetConfig, voyager, braavos, useInjectedConnectors, jsonRpcProvider } from '@starknet-react/core';
 import { sepolia } from '@starknet-react/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -45,7 +45,6 @@ function Root() {
   const { connectors } = useInjectedConnectors({
     recommended: [
       braavos(),
-      argent(),
     ],
     includeRecommended: "always",
     order: "random"

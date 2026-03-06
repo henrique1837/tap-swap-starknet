@@ -1,22 +1,64 @@
-import React, { useState } from 'react';
+import React from 'react';
 
 function Header({
     lncIsConnected,
+    lncAlias,
     nostrConnected,
+    nostrPubkey,
     walletConnected,
     onOpenNostrModal,
     onOpenNodeModal,
     onOpenConnectModal,
     walletAddress
 }) {
-    const [showWalletTooltip, setShowWalletTooltip] = useState(false);
+    const shortenValue = (value, left = 8, right = 6) => {
+        if (!value || typeof value !== 'string') return '';
+        if (value.length <= left + right + 3) return value;
+        return `${value.slice(0, left)}...${value.slice(-right)}`;
+    };
 
-    const StatusDot = ({ connected, label }) => (
-        <div className="flex items-center gap-2">
-            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)] animate-pulse' : 'bg-rose-500'}`}></div>
-            <span className="text-sm font-medium text-slate-300">{label}</span>
-        </div>
-    );
+    const StatusItem = ({ connected, label, value, title, onClick }) => {
+        const common = "group min-w-[170px] rounded-xl px-3 py-2 transition-all duration-300 text-left";
+        const interactive = onClick ? "hover:bg-white/10 cursor-pointer" : "";
+        const labelColor = onClick ? "group-hover:text-slate-200" : "";
+        const valueColor = onClick ? "group-hover:text-white" : "";
+
+        const content = (
+            <>
+                <div className="flex items-center gap-2 mb-1">
+                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)] animate-pulse' : 'bg-rose-500'}`}></div>
+                    <span className={`text-[11px] font-bold text-slate-400 uppercase tracking-wider transition-colors ${labelColor}`}>{label}</span>
+                </div>
+                <p className={`text-sm font-semibold text-slate-200 truncate transition-colors ${valueColor}`}>
+                    {value}
+                </p>
+            </>
+        );
+
+        if (onClick) {
+            return (
+                <button onClick={onClick} className={`${common} ${interactive}`} title={title}>
+                    {content}
+                </button>
+            );
+        }
+
+        return (
+            <div className={common} title={title}>
+                {content}
+            </div>
+        );
+    };
+
+    const lncDisplay = lncIsConnected
+        ? (lncAlias || 'Connected')
+        : 'Not connected';
+    const nostrDisplay = nostrConnected
+        ? shortenValue(nostrPubkey || '', 10, 8)
+        : 'Not linked';
+    const walletDisplay = walletConnected
+        ? shortenValue(walletAddress || '', 8, 6)
+        : 'Not connected';
 
     return (
         <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-xl border-b border-white/10 shadow-lg">
@@ -36,64 +78,36 @@ function Header({
                     {/* Status Indicators & Actions */}
                     <div className="flex items-center gap-6">
                         {/* Connection Status */}
-                        <div className="hidden md:flex items-center gap-5 bg-black/20 rounded-2xl px-5 py-2.5 border border-white/5 shadow-inner">
-                            <button
-                                onClick={onOpenNodeModal}
-                                className="group hover:bg-white/10 rounded-lg px-2 py-1 transition-all duration-300"
+                        <div className="hidden md:flex items-center gap-2 bg-black/20 rounded-2xl px-3 py-2 border border-white/5 shadow-inner">
+                            <StatusItem
+                                connected={lncIsConnected}
+                                label="LNC"
+                                value={lncDisplay}
                                 title="View Lightning Node Info"
-                            >
-                                <StatusDot connected={lncIsConnected} label={<span className="text-slate-300 group-hover:text-white transition-colors">LNC</span>} />
-                            </button>
+                                onClick={onOpenNodeModal}
+                            />
 
-                            <div className="w-px h-4 bg-white/10"></div>
+                            <div className="w-px h-9 bg-white/10"></div>
 
-                            <button
-                                onClick={onOpenNostrModal}
-                                className="group hover:bg-white/10 rounded-lg px-2 py-1 transition-all duration-300"
+                            <StatusItem
+                                connected={nostrConnected}
+                                label="Nostr"
+                                value={nostrDisplay}
                                 title="View Nostr Identity"
-                            >
-                                <StatusDot connected={nostrConnected} label={<span className="text-slate-300 group-hover:text-white transition-colors">Nostr</span>} />
-                            </button>
+                                onClick={onOpenNostrModal}
+                            />
 
-                            <div className="w-px h-4 bg-white/10"></div>
+                            <div className="w-px h-9 bg-white/10"></div>
 
-                            <div className="relative">
-                                <button
-                                    onMouseEnter={() => setShowWalletTooltip(true)}
-                                    onMouseLeave={() => setShowWalletTooltip(false)}
-                                    className="group hover:bg-white/10 rounded-lg px-2 py-1 transition-all duration-300"
-                                    title="Wallet Status"
-                                >
-                                    <StatusDot connected={walletConnected} label={<span className="text-slate-300 group-hover:text-white transition-colors">Wallet</span>} />
-                                </button>
-
-                                {showWalletTooltip && walletAddress && (
-                                    <div className="absolute top-full right-0 mt-3 bg-slate-800 text-slate-200 text-xs font-mono rounded-xl px-4 py-2 shadow-2xl border border-white/10 animate-in fade-in slide-in-from-top-2">
-                                        {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                                    </div>
-                                )}
-                            </div>
+                            <StatusItem
+                                connected={walletConnected}
+                                label="Wallet"
+                                value={walletDisplay}
+                                title="Wallet status"
+                            />
                         </div>
 
                         <div className="flex items-center gap-3">
-                            <button
-                                onClick={onOpenNodeModal}
-                                className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 px-3.5 py-2.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-2 shadow-sm"
-                                title="Lightning Node Info"
-                            >
-                                <span className="text-lg disabled:grayscale">⚡</span>
-                            </button>
-
-                            <button
-                                onClick={onOpenNostrModal}
-                                className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 px-3.5 py-2.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-2 shadow-sm"
-                                title="Nostr Identity"
-                            >
-                                <span className="text-lg">🔑</span>
-                            </button>
-
-                            <div className="h-8 w-px bg-white/10 mx-2"></div>
-
                             <button
                                 onClick={onOpenConnectModal}
                                 className={`px-5 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-lg flex items-center gap-2.5 transform hover:-translate-y-0.5 ${lncIsConnected && walletConnected

@@ -180,6 +180,7 @@ function AppContent() {
 
   const [lncPairingPhrase, setLncPairingPhrase] = useState('');
   const [lncPassword, setLncPassword] = useState('');
+  const [lncAlias, setLncAlias] = useState('');
 
   // Taproot Assets hook
   const {
@@ -250,6 +251,10 @@ function AppContent() {
   const [claimedIntentions, setClaimedIntentions] = useState([]);
   const [isLoadingFinalizeIntentions, setIsLoadingFinalizeIntentions] = useState(false);
   const isWalletConnected = Boolean(isConnected && address);
+  const braavosConnectors = useMemo(
+    () => connectors.filter((item) => (item?.id || '').toLowerCase().includes('braavos')),
+    [connectors],
+  );
   const walletNetwork = !isWalletConnected
     ? ''
     : (chainId === sepolia.id ? 'sepolia' : `chain-${chainId?.toString(16) || 'unknown'}`);
@@ -262,6 +267,35 @@ function AppContent() {
       return () => clearTimeout(timer);
     }
   }, [isWalletConnected]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLncAlias = async () => {
+      if (!lncIsConnected || !lncClient?.lnd?.lightning?.getInfo) {
+        if (isMounted) setLncAlias('');
+        return;
+      }
+
+      try {
+        const info = await lncClient.lnd.lightning.getInfo();
+        if (isMounted) {
+          setLncAlias(info?.alias || '');
+        }
+      } catch (err) {
+        console.warn('Failed to fetch LNC alias for header:', err);
+        if (isMounted) {
+          setLncAlias('');
+        }
+      }
+    };
+
+    loadLncAlias();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [lncClient, lncIsConnected]);
 
   const activeStarknetAddress = address || '';
 
@@ -335,23 +369,16 @@ function AppContent() {
     try {
       let selectedConnector = specificConnector || null;
 
-      if (!selectedConnector) {
-        // Auto-pick: prefer braavos, then any other available connector
-        const priorityOrder = ['braavos', 'argent'];
-        for (const connectorId of priorityOrder) {
-          const candidate = connectors.find((item) => (item?.id || '').toLowerCase().includes(connectorId));
-          if (candidate) {
-            selectedConnector = candidate;
-            break;
-          }
-        }
-        if (!selectedConnector && connectors.length > 0) {
-          selectedConnector = connectors[0];
-        }
+      if (selectedConnector && !(selectedConnector?.id || '').toLowerCase().includes('braavos')) {
+        throw new Error('Only Braavos wallet is supported in this app.');
       }
 
       if (!selectedConnector) {
-        throw new Error('No Starknet wallet connector found. Install Braavos or ArgentX.');
+        selectedConnector = braavosConnectors[0] || null;
+      }
+
+      if (!selectedConnector) {
+        throw new Error('No Braavos wallet connector found. Please install Braavos.');
       }
 
       await connectAsync({ connector: selectedConnector });
@@ -372,7 +399,7 @@ function AppContent() {
     } finally {
       setIsConnectingWallet(false);
     }
-  }, [connectAsync, connectors]);
+  }, [braavosConnectors, connectAsync]);
 
   const handleDisconnectWallet = useCallback(async () => {
     setWalletError('');
@@ -1417,7 +1444,9 @@ function AppContent() {
       {/* Header */}
       <Header
         lncIsConnected={lncIsConnected}
+        lncAlias={lncAlias}
         nostrConnected={!!nostrPubkey}
+        nostrPubkey={nostrPubkey}
         walletConnected={isWalletConnected}
         walletAddress={activeStarknetAddress}
         onOpenNostrModal={() => setIsNostrModalOpen(true)}
@@ -1453,7 +1482,7 @@ function AppContent() {
           lncIsPaired={lncIsPaired}
           lncIsConnected={lncIsConnected}
           onExploreAsGuest={() => setIsConnectModalOpen(false)}
-          availableConnectors={connectors}
+          availableConnectors={braavosConnectors}
         />
       </Modal>
 
