@@ -17,6 +17,7 @@ import CreateSwapIntention from './components/CreateSwapIntention';
 import SwapIntentionsList from './components/SwapIntentionsList';
 import Header from './components/Header';
 import Modal from './components/Modal';
+import AdminConfig from './components/AdminConfig';
 import { decode } from 'light-bolt11-decoder';
 import InvoiceDecoder from './components/InvoiceDecoder';
 
@@ -213,6 +214,9 @@ function AppContent() {
     createAssetInvoice,
     isTapdAvailable,
     isTapdChannelsAvailable,
+    channelAssets,
+    activeAssetId,
+    changeActiveAssetId,
   } = useTaprootAssets(lncClient, lncIsConnected);
 
   const {
@@ -248,6 +252,7 @@ function AppContent() {
   // Modal states
   const [isNostrModalOpen, setIsNostrModalOpen] = useState(false);
   const [isNodeModalOpen, setIsNodeModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
 
   // Locally generated invoice that is not yet published to Nostr.
   const [pendingInvoice, setPendingInvoice] = useState(null);
@@ -626,8 +631,6 @@ function AppContent() {
     ? 'bg-white text-indigo-700 shadow-md transform scale-[1.02]'
     : 'text-slate-300 hover:bg-white/10 hover:text-white'
     }`;
-
-  // ...
 
 
 
@@ -1462,6 +1465,7 @@ function AppContent() {
         onOpenNostrModal={() => setIsNostrModalOpen(true)}
         onOpenNodeModal={() => setIsNodeModalOpen(true)}
         onOpenConnectModal={() => setIsConnectModalOpen(true)}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
       />
 
       {/* Modals */}
@@ -2492,6 +2496,21 @@ function AppContent() {
               )}
             </div>
           )}
+
+          {/* Modal for Admin Configuration */}
+          <Modal
+            isOpen={isAdminModalOpen}
+            onClose={() => setIsAdminModalOpen(false)}
+            title="Admin Settings"
+          >
+            <AdminConfig
+              channelAssets={channelAssets}
+              activeAssetId={activeAssetId}
+              changeActiveAssetId={changeActiveAssetId}
+              isLoading={isLoadingAssets}
+              fetchAssets={fetchAssets}
+            />
+          </Modal>
 
           <div className="w-full max-w-4xl mt-12 mb-4">
             <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 flex items-center justify-between shadow-inner">

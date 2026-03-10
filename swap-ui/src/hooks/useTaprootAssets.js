@@ -4,7 +4,6 @@ import { Buffer } from 'buffer';
 const base64ToHex = (base64) => `0x${Buffer.from(base64, 'base64').toString('hex')}`;
 const normalizeHex = (hex) => (hex || '').replace(/^0x/, '').toLowerCase();
 const CONFIGURED_ASSET_ID = normalizeHex(import.meta.env.VITE_TAPROOT_ASSET_ID || '');
-const FORCED_INVOICE_ASSET_ID = CONFIGURED_ASSET_ID;
 const hexToBase64Bytes32 = (hex) => {
     const normalized = normalizeHex(hex);
     if (!/^[0-9a-f]{64}$/i.test(normalized)) return '';
@@ -141,6 +140,21 @@ export const useTaprootAssets = (lncClient, isConnected) => {
     const [error, setError] = useState(null);
     const [selectedAsset, setSelectedAsset] = useState(null);
 
+    const [activeAssetId, setActiveAssetIdState] = useState(() => {
+        const stored = localStorage.getItem('tapswap_active_asset_id');
+        return stored !== null ? normalizeHex(stored) : CONFIGURED_ASSET_ID;
+    });
+
+    const changeActiveAssetId = useCallback((newId) => {
+        const normalized = newId ? normalizeHex(newId) : '';
+        if (normalized) {
+            localStorage.setItem('tapswap_active_asset_id', normalized);
+        } else {
+            localStorage.removeItem('tapswap_active_asset_id');
+        }
+        setActiveAssetIdState(normalized || CONFIGURED_ASSET_ID);
+    }, []);
+
     // Check if tapd is available
     const isTapdAvailable = useCallback(() => {
         return Boolean(lncClient?.tapd?.taprootAssets);
@@ -236,89 +250,33 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                 }
             }
 
-            // Strategy 2: fallback to tapd views if available.
-            if (lncClient?.tapd?.taprootAssets) {
-                const taprootAssetsApi = lncClient.tapd.taprootAssets;
-                const [allAssetsResult, allBalancesResult, allUtxosResult] = await Promise.allSettled([
-                    taprootAssetsApi.listAssets({
+            // Strategy 2 (Supplemental): use tapd views ONLY for supplemental metadata (names)
+            // if we already found the asset in channels via Strategy 1.
+            // We NO LONGER use Strategy 2 to discover assets or determine balances as per user request.
+            if (lncClient?.tapd?.taprootAssets && channelAssetMap.size > 0) {
+                try {
+                    const response = await lncClient.tapd.taprootAssets.listAssets({
                         includeLeased: true,
-                        scriptKeyType: {
-                            allTypes: true,
-                        },
-                    }),
-                    taprootAssetsApi.listBalances({
-                        assetId: true,
-                        includeLeased: true,
-                        scriptKeyType: {
-                            allTypes: true,
-                        },
-                    }),
-                    taprootAssetsApi.listUtxos({
-                        includeLeased: true,
-                        scriptKeyType: {
-                            allTypes: true,
-                        },
-                    }),
-                ]);
-                const allAssets = allAssetsResult.status === 'fulfilled' ? (allAssetsResult.value.assets || []) : [];
-                const allBalances = allBalancesResult.status === 'fulfilled' ? (allBalancesResult.value.assetBalances || {}) : {};
-                const allUtxos = allUtxosResult.status === 'fulfilled' ? (allUtxosResult.value.managedUtxos || {}) : {};
-
-                const metadataByAssetId = new Map();
-                allAssets.forEach((asset) => {
-                    const assetId = bytesToHex(asset?.assetGenesis?.assetId);
-                    if (!assetId) return;
-                    metadataByAssetId.set(assetId, {
-                        name: asset?.assetGenesis?.name || 'Channel Asset',
-                        amount: asset?.amount || '0',
-                        scriptKeyType: asset?.scriptKeyType,
+                        scriptKeyType: { allTypes: true },
                     });
-                });
 
-                const upsertTapdChannelAsset = (assetId, partial) => {
-                    if (!assetId) return;
-                    const metadata = metadataByAssetId.get(assetId);
-                    upsertChannelAsset(assetId, {
-                        name: partial.name || metadata?.name,
-                        amount: partial.amount || metadata?.amount,
-                        channelBalance: partial.channelBalance || allBalances[assetId]?.balance || '0',
-                        scriptKeyType: partial.scriptKeyType || metadata?.scriptKeyType || 'SCRIPT_KEY_CHANNEL',
-                        source: partial.source,
-                    });
-                };
-
-                allAssets.forEach((asset) => {
-                    if (!isChannelScriptKeyType(asset?.scriptKeyType)) return;
-                    const assetId = bytesToHex(asset?.assetGenesis?.assetId);
-                    upsertTapdChannelAsset(assetId, {
-                        name: asset?.assetGenesis?.name || 'Channel Asset',
-                        amount: asset?.amount || '0',
-                        scriptKeyType: asset?.scriptKeyType,
-                        source: 'listAssets',
-                    });
-                });
-
-                Object.values(allUtxos).forEach((utxo) => {
-                    (utxo?.assets || []).forEach((asset) => {
-                        if (!isChannelScriptKeyType(asset?.scriptKeyType)) return;
+                    for (const asset of response.assets || []) {
                         const assetId = bytesToHex(asset?.assetGenesis?.assetId);
-                        upsertTapdChannelAsset(assetId, {
-                            name: asset?.assetGenesis?.name || 'Channel Asset',
-                            amount: asset?.amount || '0',
-                            scriptKeyType: asset?.scriptKeyType || 'SCRIPT_KEY_CHANNEL',
-                            source: 'listUtxos',
-                        });
-                    });
-                });
-
-                Object.entries(allBalances).forEach(([rawAssetId, entry]) => {
-                    const assetId = bytesToHex(rawAssetId);
-                    if (!assetId || !channelAssetMap.has(assetId)) return;
-                    upsertTapdChannelAsset(assetId, {
-                        channelBalance: entry?.balance || '0',
-                        source: 'listBalances',
-                    });
-                });
+                        const normalizedId = normalizeHex(assetId);
+                        if (channelAssetMap.has(normalizedId)) {
+                            const current = channelAssetMap.get(normalizedId);
+                            if (asset?.assetGenesis?.name && (!current.name || current.name === 'Channel Asset')) {
+                                current.name = asset.assetGenesis.name;
+                            }
+                            // We can also add other sources if it helps debugging, but we don't overwrite balance.
+                            if (!current.sources.includes('listAssets (metadata)')) {
+                                current.sources.push('listAssets (metadata)');
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Supplemental metadata fetch failed:', err);
+                }
             }
 
             const assetsInChannels = Array.from(channelAssetMap.values());
@@ -404,13 +362,15 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                 });
             }
 
-            const filteredAssets = CONFIGURED_ASSET_ID
-                ? merged.filter((asset) => normalizeHex(asset.assetId) === CONFIGURED_ASSET_ID)
+            const filteredAssets = activeAssetId
+                ? merged.filter((asset) => normalizeHex(asset.assetId) === activeAssetId)
                 : merged;
-            setAssets(filteredAssets);
 
-            const configuredAsset = CONFIGURED_ASSET_ID
-                ? filteredAssets.find((asset) => normalizeHex(asset.assetId) === CONFIGURED_ASSET_ID) || null
+            // Show all assets in the on-chain list, but keep selectedAsset for the swap logic
+            setAssets(merged);
+
+            const configuredAsset = activeAssetId
+                ? merged.find((asset) => normalizeHex(asset.assetId) === activeAssetId) || null
                 : null;
             setSelectedAsset(configuredAsset);
         } catch (err) {
@@ -429,9 +389,9 @@ export const useTaprootAssets = (lncClient, isConnected) => {
         }
 
         try {
-            const assetIdHex = normalizeHex(FORCED_INVOICE_ASSET_ID);
+            const assetIdHex = normalizeHex(activeAssetId);
             if (!assetIdHex) {
-                throw new Error('Missing Taproot Asset ID. Set VITE_TAPROOT_ASSET_ID in .env.');
+                throw new Error('Missing Taproot Asset ID. Set it in Admin page or .env.');
             }
             const assetIdCandidates = buildAssetIdEncodingCandidates(assetIdHex);
             if (assetIdCandidates.length === 0) {
@@ -499,5 +459,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
         createAssetInvoice,
         isTapdAvailable: isTapdAvailable(),
         isTapdChannelsAvailable: isTapdChannelsAvailable(),
+        activeAssetId,
+        changeActiveAssetId,
     };
 };
