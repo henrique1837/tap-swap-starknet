@@ -367,7 +367,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
                 : merged;
 
             // Show all assets in the on-chain list, but keep selectedAsset for the swap logic
-            setAssets(merged);
+            setAssets(formattedAssets);
 
             const configuredAsset = activeAssetId
                 ? merged.find((asset) => normalizeHex(asset.assetId) === activeAssetId) || null
