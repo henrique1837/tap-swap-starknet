@@ -1579,6 +1579,11 @@ function AppContent() {
               setSwapStatus={setSwapStatus}
               starknetAddress={activeStarknetAddress}
               allowSelfAccept={allowSelfAccept}
+              onAcceptSuccess={(intention) => {
+                setSelectedSwapIntention(intention);
+                setActiveTab('finalize');
+                setFinalizeView('select');
+              }}
             />
           )}
 

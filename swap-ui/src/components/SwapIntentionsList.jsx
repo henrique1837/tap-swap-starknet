@@ -122,6 +122,7 @@ function SwapIntentionsList({
   setSwapStatus,
   starknetAddress,
   allowSelfAccept,
+  onAcceptSuccess,
 }) {
   const { nostrPubkey, fetchSwapIntentions, acceptSwapIntention } = useNostr();
   const [swapIntentions, setSwapIntentions] = useState([]);
@@ -155,11 +156,14 @@ function SwapIntentionsList({
       await acceptSwapIntention(intention, starknetAddress || '');
       setSwapStatus('Intention accepted. Swap can start.');
       await fetchAndSetSwapIntentions();
+      if (onAcceptSuccess) {
+        onAcceptSuccess(intention);
+      }
     } catch (err) {
       console.error('Error accepting intention:', err);
       setErrorMessage(`Failed to accept intention: ${err.message || String(err)}`);
     }
-  }, [acceptSwapIntention, starknetAddress, fetchAndSetSwapIntentions, setErrorMessage, setSwapStatus]);
+  }, [acceptSwapIntention, starknetAddress, fetchAndSetSwapIntentions, setErrorMessage, setSwapStatus, onAcceptSuccess]);
 
   return (
     <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-8 border border-white/50">
