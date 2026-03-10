@@ -380,7 +380,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
         } finally {
             setIsLoading(false);
         }
-    }, [lncClient, isConnected, isTapdAvailable, fetchChannelAssets]);
+    }, [lncClient, isConnected, isTapdAvailable, fetchChannelAssets, activeAssetId]);
 
     // Create a Taproot Asset invoice
     const createAssetInvoice = useCallback(async (asset, amountSats, memo = '') => {
@@ -435,7 +435,7 @@ export const useTaprootAssets = (lncClient, isConnected) => {
             console.error('Error creating Taproot Asset invoice:', err);
             throw new Error(`Failed to create Taproot Asset invoice: ${err.message || String(err)}`);
         }
-    }, [lncClient, isConnected, isTapdChannelsAvailable]);
+    }, [lncClient, isConnected, isTapdChannelsAvailable, activeAssetId]);
 
     // Fetch assets when connection status changes
     useEffect(() => {

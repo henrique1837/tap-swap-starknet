@@ -443,6 +443,8 @@ function AppContent() {
   const isSelectedPoster = Boolean(selectedSwapIntention && selectedPosterPubkey === nostrPubkey);
   const isSelectedAccepter = Boolean(selectedSwapIntention && selectedSwapIntention.acceptedByPubkey === nostrPubkey);
   const isSelectedAccepted = Boolean(selectedSwapIntention && ['accepted', 'invoice_ready'].includes(selectedSwapIntention.status));
+  const isClaimedStatus = selectedSwapIntention?.status === 'claimed';
+  const isAwaitingAcceptance = selectedSwapIntention?.status === 'open';
   const selectedWantedAsset = selectedSwapIntention?.wantedAsset || null;
   const selectedWantedAssetNormalized = normalizeWantedAsset(selectedWantedAsset);
   const isWantsStrk = selectedWantedAssetNormalized === 'STRK';
@@ -467,20 +469,24 @@ function AppContent() {
     Boolean(selectedSwapIntention) &&
     ((claimerRole === 'poster' && isSelectedPoster) ||
       (claimerRole === 'accepter' && isSelectedAccepter));
-  const roleBadgeText = !isSelectedAccepted
-    ? 'Waiting for acceptance'
-    : isLockerRoleMatch
-      ? 'You are Locker'
-      : isClaimerRoleMatch
-        ? 'You are Claimer'
-        : 'Waiting for your turn';
-  const roleBadgeClassName = !isSelectedAccepted
-    ? 'bg-amber-100 text-amber-800 border-amber-200'
-    : isLockerRoleMatch
-      ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
-      : isClaimerRoleMatch
-        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-        : 'bg-slate-100 text-slate-700 border-slate-200';
+  const roleBadgeText = isClaimedStatus
+    ? 'Claimed'
+    : !isSelectedAccepted
+      ? 'Waiting for acceptance'
+      : isLockerRoleMatch
+        ? 'You are Locker'
+        : isClaimerRoleMatch
+          ? 'You are Claimer'
+          : 'Waiting for your turn';
+  const roleBadgeClassName = isClaimedStatus
+    ? 'bg-teal-100 text-teal-800 border-teal-200'
+    : !isSelectedAccepted
+      ? 'bg-amber-100 text-amber-800 border-amber-200'
+      : isLockerRoleMatch
+        ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+        : isClaimerRoleMatch
+          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          : 'bg-slate-100 text-slate-700 border-slate-200';
 
   const pendingInvoiceForSelected = Boolean(
     pendingInvoice && selectedSwapIntention && pendingInvoice.dTag === selectedSwapIntention.dTag,
@@ -740,11 +746,18 @@ function AppContent() {
         const latestInvoice = targetedEvents[0];
         try {
           const content = JSON.parse(latestInvoice.content || '{}');
+          const lockTxFromTags = extractTagValue(latestInvoice.tags, 'l')
+            || extractTagValue(latestInvoice.tags, 'tx')
+            || extractTagValue(latestInvoice.tags, 'x')
+            || '';
           updatedIntention = {
             ...selectedSwapIntention,
             status: 'invoice_ready',
             paymentRequest: content.paymentRequest || '',
             paymentHash: content.paymentHash || extractTagValue(latestInvoice.tags, 'h') || '',
+            lockTxHash: content.lockTxHash || lockTxFromTags || selectedSwapIntention.lockTxHash || '',
+            timelock: content.timelock || selectedSwapIntention.timelock || null,
+            invoicePublishedAt: latestInvoice.created_at || selectedSwapIntention.invoicePublishedAt || null,
           };
           if (updatedIntention.paymentHash) {
             hashToVerify = updatedIntention.paymentHash;
@@ -871,7 +884,7 @@ function AppContent() {
       let paymentAssetIdEncoded = '';
 
       if (tapChannels?.decodeAssetPayReq && tapChannels?.sendPayment) {
-        const candidateAssetIds = CONFIG_TAPROOT_ASSET_ID ? [CONFIG_TAPROOT_ASSET_ID] : [];
+        const candidateAssetIds = activeAssetId ? [activeAssetId] : [];
 
         for (const assetId of candidateAssetIds) {
           const assetIdEncodings = buildAssetIdEncodingCandidates(assetId);
@@ -1817,7 +1830,7 @@ function AppContent() {
                                     invoice={row.paymentRequest}
                                     title="Invoice Snapshot"
                                     lncClient={lncClient}
-                                    assetId={CONFIG_TAPROOT_ASSET_ID}
+                                    assetId={activeAssetId}
                                   />
                                 </div>
                               </details>
@@ -1847,7 +1860,9 @@ function AppContent() {
                       </div>
                       <div>
                         <h2 className="text-2xl font-bold text-slate-800">Next Steps</h2>
-                        <p className="text-sm text-slate-500 font-medium">Follow the instructions to proceed with the swap.</p>
+                        <p className="text-sm text-slate-500 font-medium">
+                          {isClaimedStatus ? 'Order claimed. Funds have been released to the claimer.' : 'Follow the instructions to proceed with the swap.'}
+                        </p>
                       </div>
                     </div>
 
@@ -1868,23 +1883,55 @@ function AppContent() {
                       </span>
                     </div>
 
-                    <div className="p-5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                      <h4 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        Protocol Rule
-                      </h4>
-                      {isWantsStrk ? (
-                        <p className="text-sm text-indigo-700/80 leading-relaxed">
-                          The <strong className="text-indigo-900">accepter</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">poster</strong> pays the invoice and claims STRK.
+                    {isClaimedStatus ? (
+                      <div className="p-5 bg-emerald-50 rounded-2xl border border-emerald-200">
+                        <h4 className="text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                          Order Finalized
+                        </h4>
+                        <p className="text-sm text-emerald-800/80 leading-relaxed">
+                          This order has been claimed and finalized. No further actions are required.
                         </p>
-                      ) : (
-                        <p className="text-sm text-indigo-700/80 leading-relaxed">
-                          The <strong className="text-indigo-900">poster</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">accepter</strong> continues after the invoice appears.
-                        </p>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="p-5 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                        <h4 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          Protocol Rule
+                        </h4>
+                        {isWantsStrk ? (
+                          <p className="text-sm text-indigo-700/80 leading-relaxed">
+                            The <strong className="text-indigo-900">accepter</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">poster</strong> pays the invoice and claims STRK.
+                          </p>
+                        ) : (
+                          <p className="text-sm text-indigo-700/80 leading-relaxed">
+                            The <strong className="text-indigo-900">poster</strong> generates the invoice, locks STRK, then publishes the invoice. The <strong className="text-indigo-900">accepter</strong> continues after the invoice appears.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                    {!isSelectedAccepted && (
+                    {isClaimerRoleMatch && selectedLockTxHash && (
+                      <div className="mt-4 p-5 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Lock Transaction</p>
+                          <a
+                            href={`${STARKSCAN_SEPOLIA_TX_PREFIX}${selectedLockTxHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            Starkscan
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          </a>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                          <p className="text-[11px] font-mono text-slate-900 break-all leading-relaxed">{selectedLockTxHash}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isAwaitingAcceptance && (
                       <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-200 flex gap-3 items-start">
                         <div className="text-amber-500 mt-0.5">⚠️</div>
                         <p className="text-sm text-amber-800 font-medium">
@@ -1898,94 +1945,137 @@ function AppContent() {
                   {isLockerRoleMatch ? (
                     <>
                       {isInvoiceReadyState ? (
-                        <div className="bg-white/80 backdrop-blur-lg p-8 rounded-3xl shadow-xl w-full max-w-2xl mt-6 border border-emerald-200/80">
-                          <div className="flex items-center justify-between mb-6 border-b border-emerald-100 pb-4">
-                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                              <span className="bg-emerald-100 text-emerald-700 w-8 h-8 rounded-lg flex items-center justify-center">✓</span>
-                              Invoice Published
-                            </h3>
-                            <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Invoice Ready</span>
+                        <div className="w-full max-w-2xl mt-6 space-y-4">
+
+                          {/* ── Hero Status Banner ── */}
+                          <div className="bg-gradient-to-r from-emerald-100 to-teal-100 border border-emerald-300 rounded-2xl px-6 py-4 flex items-center justify-between gap-4 shadow-sm">
+                            <div className="flex items-center gap-3">
+                              <div className="bg-emerald-600 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                              <div>
+                                <p className="text-base font-bold text-slate-900">Invoice Published</p>
+                                <p className="text-xs text-slate-700">STRK is locked · counterparty can now pay</p>
+                              </div>
+                            </div>
+                            <span className="bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full border border-emerald-700 whitespace-nowrap shadow-sm">Invoice Ready</span>
                           </div>
 
-                          <p className="text-sm text-slate-600 mb-5">
-                            This swap already has a published invoice. Invoice generation and manual paste are locked to prevent overwriting the current flow.
-                          </p>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Lock Transaction</p>
-                              <p className="text-xs font-mono text-slate-700 break-all">
-                                {selectedLockTxHash || 'Not available on this intention.'}
-                              </p>
-                              {selectedLockTxHash && (
-                                <a
-                                  href={`${STARKSCAN_SEPOLIA_TX_PREFIX}${selectedLockTxHash}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-block mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-                                >
-                                  View on Starkscan →
-                                </a>
+                          {/* ── Key On-chain Data ── */}
+                          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            {/* Lock Tx */}
+                            <div className="px-5 py-4 border-b border-slate-100">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">Lock Transaction</p>
+                              {selectedLockTxHash ? (
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                                    <p className="text-[11px] font-mono text-slate-900 break-all leading-relaxed">{selectedLockTxHash}</p>
+                                  </div>
+                                  <a
+                                    href={`${STARKSCAN_SEPOLIA_TX_PREFIX}${selectedLockTxHash}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex-shrink-0 inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100 hover:bg-indigo-200 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    Starkscan
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                  </a>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-2 text-xs font-semibold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full">
+                                  Pending on-chain confirmation
+                                </span>
                               )}
                             </div>
-                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Hashlock (Payment Hash)</p>
-                              <p className="text-xs font-mono text-slate-700 break-all">
-                                {effectiveInvoicePaymentHash || 'Not available'}
-                              </p>
+
+                            {/* Hashlock */}
+                            <div className="px-5 py-4 border-b border-slate-100">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">Hashlock (Payment Hash)</p>
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                                <p className="text-[11px] font-mono text-slate-900 break-all leading-relaxed">{effectiveInvoicePaymentHash || '—'}</p>
+                              </div>
                             </div>
-                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">STRK Timelock</p>
-                              <p className="text-sm font-semibold text-slate-800">
-                                {selectedTimelock ? formatUnixTime(selectedTimelock) : 'Not available'}
-                              </p>
-                              {selectedTimelock && (
-                                <p className="text-xs text-slate-500 mt-1">
-                                  Unix {selectedTimelock} • {formatRemainingTime(selectedTimelock)}
-                                </p>
-                              )}
-                            </div>
-                            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">Invoice Published At</p>
-                              <p className="text-sm font-semibold text-slate-800">
-                                {selectedInvoicePublishedAt ? formatUnixTime(selectedInvoicePublishedAt) : 'Not available'}
-                              </p>
+
+                            {/* Timelock + Published At — side by side */}
+                            <div className="grid grid-cols-2">
+                              <div className="px-5 py-4 border-r border-slate-100">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">STRK Timelock</p>
+                                {selectedTimelock ? (
+                                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                                    <p className="text-sm font-bold text-slate-900">{formatUnixTime(selectedTimelock)}</p>
+                                    <p className="text-[11px] text-slate-700 mt-0.5">{formatRemainingTime(selectedTimelock)}</p>
+                                  </div>
+                                ) : <p className="text-xs text-slate-600 italic">—</p>}
+                              </div>
+                              <div className="px-5 py-4">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">Invoice Published At</p>
+                                {selectedInvoicePublishedAt ? (
+                                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                                    <p className="text-sm font-bold text-slate-900">{formatUnixTime(selectedInvoicePublishedAt)}</p>
+                                  </div>
+                                ) : <p className="text-xs text-slate-600 italic">Not recorded</p>}
+                              </div>
                             </div>
                           </div>
 
-                          <div className="mb-6 p-5 rounded-2xl border border-slate-200 bg-slate-50">
-                            <h4 className="text-sm font-bold text-slate-800 mb-3">Swap Timeline</h4>
-                            <div className="space-y-2 text-xs text-slate-600">
-                              <p><span className="font-semibold text-slate-700">Created:</span> {formatUnixTime(selectedCreatedAt)}</p>
-                              <p><span className="font-semibold text-slate-700">Accepted:</span> {formatUnixTime(selectedAcceptedAt)}</p>
-                              <p><span className="font-semibold text-slate-700">Estimated Lock Time:</span> {formatUnixTime(selectedEstimatedLockAt)}</p>
-                              <p><span className="font-semibold text-slate-700">Invoice Published:</span> {formatUnixTime(selectedInvoicePublishedAt)}</p>
-                              <p><span className="font-semibold text-slate-700">Expiry (Timelock):</span> {selectedTimelock ? `Unix ${selectedTimelock} (${formatRemainingTime(selectedTimelock)})` : 'Not available'}</p>
+                          {/* ── Swap Timeline (collapsible) ── */}
+                          <details className="group bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <summary className="cursor-pointer select-none list-none flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                              <span className="text-sm font-bold text-slate-800">Swap Timeline</span>
+                              <svg className="w-4 h-4 text-slate-500 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                            </summary>
+                            <div className="px-5 pb-5 pt-1 border-t border-slate-100">
+                              <ol className="relative border-l border-slate-300 ml-2 space-y-3 mt-3">
+                                {[
+                                  { label: 'Created', value: formatUnixTime(selectedCreatedAt) },
+                                  { label: 'Accepted', value: formatUnixTime(selectedAcceptedAt) },
+                                  { label: 'Est. Lock Time', value: formatUnixTime(selectedEstimatedLockAt) },
+                                  { label: 'Invoice Published', value: selectedInvoicePublishedAt ? formatUnixTime(selectedInvoicePublishedAt) : 'Pending' },
+                                  { label: 'Expiry', value: selectedTimelock ? `${formatUnixTime(selectedTimelock)} (${formatRemainingTime(selectedTimelock)})` : '—' },
+                                ].map(({ label, value }) => (
+                                  <li key={label} className="pl-4 relative">
+                                    <div className="absolute -left-1.5 top-1 w-3 h-3 rounded-full bg-slate-300 border-2 border-white" />
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{label}</p>
+                                    <p className="text-xs text-slate-900 font-semibold mt-0.5">{value}</p>
+                                  </li>
+                                ))}
+                              </ol>
                             </div>
-                          </div>
+                          </details>
 
-                          <div className="mb-6 p-5 rounded-2xl border border-slate-200 bg-slate-50">
-                            <h4 className="text-sm font-bold text-slate-800 mb-3">Participants & Metadata</h4>
-                            <div className="space-y-2 text-xs text-slate-600">
-                              <p><span className="font-semibold text-slate-700">Poster Pubkey:</span> <span className="font-mono">{shortenHex(selectedPosterPubkey)}</span></p>
-                              <p><span className="font-semibold text-slate-700">Accepter Pubkey:</span> <span className="font-mono">{shortenHex(selectedSwapIntention?.acceptedByPubkey || '')}</span></p>
-                              <p><span className="font-semibold text-slate-700">Invoice Publisher Pubkey:</span> <span className="font-mono">{shortenHex(selectedInvoicePublisherPubkey)}</span></p>
-                              <p><span className="font-semibold text-slate-700">Poster Starknet:</span> <span className="font-mono break-all">{selectedPosterAddress || 'Not available'}</span></p>
-                              <p><span className="font-semibold text-slate-700">Accepter Starknet:</span> <span className="font-mono break-all">{selectedAccepterAddress || 'Not available'}</span></p>
-                              <p><span className="font-semibold text-slate-700">Invoice Publisher Starknet:</span> <span className="font-mono break-all">{selectedInvoicePublisherAddress || 'Not available'}</span></p>
-                              <p><span className="font-semibold text-slate-700">Contract:</span> <span className="font-mono break-all">{contractAddress}</span></p>
-                              <p><span className="font-semibold text-slate-700">Intention ID:</span> <span className="font-mono break-all">{selectedIntentionId || 'Not available'}</span></p>
-                              <p><span className="font-semibold text-slate-700">dTag:</span> <span className="font-mono break-all">{selectedDTag || 'Not available'}</span></p>
+                          {/* ── Participants & Metadata (collapsible) ── */}
+                          <details className="group bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <summary className="cursor-pointer select-none list-none flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                              <span className="text-sm font-bold text-slate-800">Participants & Metadata</span>
+                              <svg className="w-4 h-4 text-slate-500 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                            </summary>
+                            <div className="px-5 pb-5 pt-2 border-t border-slate-100 space-y-2">
+                              {[
+                                { label: 'Poster (Nostr)', value: shortenHex(selectedPosterPubkey), mono: true },
+                                { label: 'Accepter (Nostr)', value: shortenHex(selectedSwapIntention?.acceptedByPubkey || ''), mono: true },
+                                { label: 'Invoice Publisher (Nostr)', value: shortenHex(selectedInvoicePublisherPubkey) || '—', mono: true },
+                                { label: 'Poster Starknet', value: selectedPosterAddress || '—', mono: true },
+                                { label: 'Accepter Starknet', value: selectedAccepterAddress || '—', mono: true },
+                                { label: 'Contract', value: contractAddress, mono: true },
+                                { label: 'Intention ID', value: selectedIntentionId || '—', mono: true },
+                                { label: 'dTag', value: selectedDTag || '—', mono: true },
+                              ].map(({ label, value, mono }) => (
+                                <div key={label} className="flex items-start justify-between gap-4 py-2 border-b border-slate-50 last:border-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 whitespace-nowrap w-36 flex-shrink-0 pt-0.5">{label}</span>
+                                  <span className={`text-[11px] ${mono ? 'font-mono' : ''} text-slate-900 break-all text-right`}>{value}</span>
+                                </div>
+                              ))}
                             </div>
-                          </div>
+                          </details>
 
+                          {/* ── Invoice Decoder ── */}
                           {effectiveInvoicePaymentRequest ? (
                             <InvoiceDecoder
                               key={`invoice-ready-${effectiveInvoicePaymentRequest}`}
                               invoice={effectiveInvoicePaymentRequest}
                               title="Published Invoice (Taproot/Lightning)"
                               lncClient={lncClient}
-                              assetId={CONFIG_TAPROOT_ASSET_ID}
+                              assetId={activeAssetId}
                             />
                           ) : (
                             <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-medium">
@@ -2073,7 +2163,7 @@ function AppContent() {
                                     invoice={effectiveInvoicePaymentRequest}
                                     title="LNC Invoice Details"
                                     lncClient={lncClient}
-                                    assetId={CONFIG_TAPROOT_ASSET_ID}
+                                    assetId={activeAssetId}
                                   />
                                 </div>
                               )}
@@ -2110,7 +2200,7 @@ function AppContent() {
                                     invoice={manualInvoice}
                                     title="Pasted Invoice Details"
                                     lncClient={lncClient}
-                                    assetId={CONFIG_TAPROOT_ASSET_ID}
+                                    assetId={activeAssetId}
                                   />
                                 </div>
                               )}
@@ -2267,7 +2357,7 @@ function AppContent() {
                               invoice={effectiveInvoicePaymentRequest}
                               title="Found Invoice on Nostr"
                               lncClient={lncClient}
-                              assetId={CONFIG_TAPROOT_ASSET_ID}
+                              assetId={activeAssetId}
                             />
 
                             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-inner space-y-4">

@@ -378,12 +378,16 @@ export const NostrProvider = ({ children }) => {
 
           const current = invoiceMap.get(dTag);
           if (!current || event.created_at >= current.created_at) {
+            const lockTxFromTags = extractTagValue(event.tags, 'l')
+              || extractTagValue(event.tags, 'tx')
+              || extractTagValue(event.tags, 'x')
+              || '';
             invoiceMap.set(dTag, {
               id: event.id,
               created_at: event.created_at,
               paymentRequest: contentData.paymentRequest || '',
               paymentHash: contentData.paymentHash || extractTagValue(event.tags, 'h') || '',
-              lockTxHash: contentData.lockTxHash || '',
+              lockTxHash: contentData.lockTxHash || lockTxFromTags || '',
               timelock: contentData.timelock || null,
               invoicePublisherPubkey: contentData.invoicePublisherPubkey || event.pubkey,
               invoicePublisherStarknetAddress: contentData.invoicePublisherStarknetAddress || '',
